@@ -679,3 +679,234 @@ def get_profit_report(db: Session, from_date: date = None, to_date: date = None)
         net_profit=net_profit,
         sales_count=len(sales)
     )
+
+
+# ============================================
+# ANALYTICS FUNCTIONS
+# ============================================
+def get_sales_trend(db: Session, period: str = 'daily', days: int = 30):
+    """Get sales trend data for charting"""
+    from datetime import timedelta
+    
+    today = date.today()
+    start_date = today - timedelta(days=days)
+    
+    sales = db.query(models.Sale).filter(
+        models.Sale.sale_date >= start_date
+    ).order_by(models.Sale.sale_date).all()
+    
+    # Group by date
+    daily_data = {}
+    for sale in sales:
+        date_key = str(sale.sale_date)
+        if date_key not in daily_data:
+            daily_data[date_key] = {'sales': Decimal('0'), 'profit': Decimal('0'), 'orders': 0}
+        
+        daily_data[date_key]['sales'] += sale.total
+        daily_data[date_key]['orders'] += 1
+        
+        # Calculate profit for this sale
+        for item in sale.items:
+            if item.product_id:
+                product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+                if product:
+                    profit = (item.unit_price - product.purchase_price) * item.quantity
+                    daily_data[date_key]['profit'] += profit
+    
+    # Fill missing dates
+    result = []
+    current = start_date
+    while current <= today:
+        date_key = str(current)
+        if date_key in daily_data:
+            result.append(schemas.SalesTrendItem(
+                date=date_key,
+                sales=daily_data[date_key]['sales'],
+                profit=daily_data[date_key]['profit'],
+                orders=daily_data[date_key]['orders']
+            ))
+        else:
+            result.append(schemas.SalesTrendItem(
+                date=date_key,
+                sales=Decimal('0'),
+                profit=Decimal('0'),
+                orders=0
+            ))
+        current += timedelta(days=1)
+    
+    return schemas.SalesTrendReport(data=result, period=period)
+
+
+def get_top_products(db: Session, limit: int = 10):
+    """Get top selling products by revenue"""
+    # Aggregate sale items
+    from sqlalchemy import desc
+    
+    product_stats = {}
+    sale_items = db.query(models.SaleItem).all()
+    
+    for item in sale_items:
+        pid = item.product_id
+        if pid not in product_stats:
+            product = db.query(models.Product).filter(models.Product.id == pid).first()
+            product_stats[pid] = {
+                'id': pid,
+                'name': product.name if product else 'Unknown',
+                'quantity_sold': 0,
+                'revenue': Decimal('0'),
+                'profit': Decimal('0'),
+                'purchase_price': product.purchase_price if product else Decimal('0')
+            }
+        
+        product_stats[pid]['quantity_sold'] += item.quantity
+        product_stats[pid]['revenue'] += item.total
+        product_stats[pid]['profit'] += (item.unit_price - product_stats[pid]['purchase_price']) * item.quantity
+    
+    # Sort by revenue and limit
+    sorted_products = sorted(product_stats.values(), key=lambda x: x['revenue'], reverse=True)[:limit]
+    
+    return [schemas.TopProductItem(
+        id=p['id'],
+        name=p['name'],
+        quantity_sold=p['quantity_sold'],
+        revenue=p['revenue'],
+        profit=p['profit']
+    ) for p in sorted_products]
+
+
+def get_inventory_value(db: Session):
+    """Calculate total inventory value and stock health"""
+    products = db.query(models.Product).all()
+    
+    total_items = len(products)
+    total_quantity = 0
+    total_cost_value = Decimal('0')
+    total_sale_value = Decimal('0')
+    
+    good_stock = 0
+    low_stock = 0
+    out_of_stock = 0
+    
+    for p in products:
+        total_quantity += p.quantity
+        total_cost_value += p.purchase_price * p.quantity
+        total_sale_value += p.sale_price * p.quantity
+        
+        if p.quantity == 0:
+            out_of_stock += 1
+        elif p.quantity <= p.min_quantity:
+            low_stock += 1
+        else:
+            good_stock += 1
+    
+    return schemas.InventoryValueReport(
+        total_items=total_items,
+        total_quantity=total_quantity,
+        total_cost_value=total_cost_value,
+        total_sale_value=total_sale_value,
+        potential_profit=total_sale_value - total_cost_value,
+        stock_health={'good': good_stock, 'low': low_stock, 'out': out_of_stock}
+    )
+
+
+def get_business_kpis(db: Session):
+    """Calculate comprehensive business KPIs"""
+    from datetime import timedelta
+    
+    today = date.today()
+    week_ago = today - timedelta(days=7)
+    month_start = today.replace(day=1)
+    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+    last_month_end = month_start - timedelta(days=1)
+    
+    # Get all sales
+    all_sales = db.query(models.Sale).all()
+    today_sales = [s for s in all_sales if s.sale_date == today]
+    week_sales = [s for s in all_sales if s.sale_date >= week_ago]
+    month_sales = [s for s in all_sales if s.sale_date >= month_start]
+    last_month_sales = [s for s in all_sales if last_month_start <= s.sale_date <= last_month_end]
+    
+    # Revenue calculations
+    total_revenue = sum(s.total for s in all_sales) if all_sales else Decimal('0')
+    today_revenue = sum(s.total for s in today_sales) if today_sales else Decimal('0')
+    week_revenue = sum(s.total for s in week_sales) if week_sales else Decimal('0')
+    month_revenue = sum(s.total for s in month_sales) if month_sales else Decimal('0')
+    last_month_revenue = sum(s.total for s in last_month_sales) if last_month_sales else Decimal('0')
+    
+    # Profit calculations
+    total_cost = Decimal('0')
+    total_discount = Decimal('0')
+    for sale in all_sales:
+        total_discount += sale.discount
+        for item in sale.items:
+            if item.product_id:
+                product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+                if product:
+                    total_cost += product.purchase_price * item.quantity
+    
+    gross_profit = sum(s.subtotal for s in all_sales) - total_cost if all_sales else Decimal('0')
+    net_profit = gross_profit - total_discount
+    
+    gross_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else Decimal('0')
+    net_margin = (net_profit / total_revenue * 100) if total_revenue > 0 else Decimal('0')
+    
+    # Average order value
+    total_orders = len(all_sales)
+    aov = total_revenue / total_orders if total_orders > 0 else Decimal('0')
+    
+    # Receivables and Payables
+    pending_receivables = db.query(func.coalesce(func.sum(models.Customer.balance), 0)).scalar()
+    pending_payables = db.query(func.coalesce(func.sum(models.Supplier.balance), 0)).scalar()
+    
+    # Inventory metrics
+    inventory_data = get_inventory_value(db)
+    
+    # Growth calculations
+    revenue_growth = ((month_revenue - last_month_revenue) / last_month_revenue * 100) if last_month_revenue > 0 else Decimal('0')
+    last_month_orders = len(last_month_sales)
+    orders_growth = ((len(month_sales) - last_month_orders) / last_month_orders * 100) if last_month_orders > 0 else Decimal('0')
+    
+    return schemas.BusinessKPIs(
+        total_revenue=total_revenue,
+        today_revenue=today_revenue,
+        this_week_revenue=week_revenue,
+        this_month_revenue=month_revenue,
+        gross_profit_margin=round(gross_margin, 2),
+        net_profit_margin=round(net_margin, 2),
+        average_order_value=round(aov, 2),
+        total_orders=total_orders,
+        pending_receivables=pending_receivables,
+        pending_payables=pending_payables,
+        inventory_value=inventory_data.total_cost_value,
+        inventory_items=inventory_data.total_items,
+        low_stock_items=inventory_data.stock_health['low'],
+        out_of_stock_items=inventory_data.stock_health['out'],
+        revenue_growth=round(revenue_growth, 2),
+        orders_growth=round(orders_growth, 2)
+    )
+
+
+def get_top_customers(db: Session, limit: int = 10):
+    """Get top customers by purchase amount"""
+    customers = db.query(models.Customer).order_by(models.Customer.total_purchases.desc()).limit(limit).all()
+    
+    result = []
+    for c in customers:
+        # Count orders
+        orders_count = db.query(models.Sale).filter(models.Sale.customer_id == c.id).count()
+        # Get last purchase date
+        last_sale = db.query(models.Sale).filter(
+            models.Sale.customer_id == c.id
+        ).order_by(models.Sale.sale_date.desc()).first()
+        
+        result.append(schemas.CustomerAnalyticsItem(
+            id=c.id,
+            name=c.name,
+            total_purchases=c.total_purchases,
+            orders_count=orders_count,
+            balance=c.balance,
+            last_purchase=last_sale.sale_date if last_sale else None
+        ))
+    
+    return result
+

@@ -372,3 +372,73 @@ class ProfitReport(BaseModel):
     total_discount: Decimal
     net_profit: Decimal
     sales_count: int
+
+
+# ============================================
+# ANALYTICS SCHEMAS
+# ============================================
+class SalesTrendItem(BaseModel):
+    date: str
+    sales: Decimal
+    profit: Decimal
+    orders: int
+
+
+class SalesTrendReport(BaseModel):
+    data: List[SalesTrendItem]
+    period: str  # 'daily', 'weekly', 'monthly'
+
+
+class TopProductItem(BaseModel):
+    id: int
+    name: str
+    quantity_sold: int
+    revenue: Decimal
+    profit: Decimal
+
+
+class InventoryValueReport(BaseModel):
+    total_items: int
+    total_quantity: int
+    total_cost_value: Decimal
+    total_sale_value: Decimal
+    potential_profit: Decimal
+    stock_health: dict  # {'good': count, 'low': count, 'out': count}
+
+
+class CustomerAnalyticsItem(BaseModel):
+    id: int
+    name: str
+    total_purchases: Decimal
+    orders_count: int
+    balance: Decimal
+    last_purchase: Optional[date] = None
+
+
+class BusinessKPIs(BaseModel):
+    # Revenue Metrics
+    total_revenue: Decimal
+    today_revenue: Decimal
+    this_week_revenue: Decimal
+    this_month_revenue: Decimal
+    
+    # Profit Metrics
+    gross_profit_margin: Decimal  # (gross_profit / revenue) * 100
+    net_profit_margin: Decimal    # (net_profit / revenue) * 100
+    
+    # Operations
+    average_order_value: Decimal
+    total_orders: int
+    pending_receivables: Decimal  # Total unpaid customer balances
+    pending_payables: Decimal     # Total unpaid supplier balances
+    
+    # Inventory
+    inventory_value: Decimal
+    inventory_items: int
+    low_stock_items: int
+    out_of_stock_items: int
+    
+    # Growth (compared to previous period)
+    revenue_growth: Decimal  # percentage
+    orders_growth: Decimal   # percentage
+

@@ -92,4 +92,13 @@ export const DashboardAPI = {
     },
 };
 
+// Analytics API
+export const AnalyticsAPI = {
+    getSalesTrend: (days = 30) => api.get(`/analytics/sales-trend?days=${days}`).then(res => res.data),
+    getTopProducts: (limit = 10) => api.get(`/analytics/top-products?limit=${limit}`).then(res => res.data),
+    getInventoryValue: () => api.get('/analytics/inventory-value').then(res => res.data),
+    getKPIs: () => api.get('/analytics/kpis').then(res => res.data),
+    getTopCustomers: (limit = 10) => api.get(`/analytics/top-customers?limit=${limit}`).then(res => res.data),
+};
+
 export default api;

@@ -338,6 +338,43 @@ def get_profit_report(
 
 
 # ============================================
+# ANALYTICS ENDPOINTS
+# ============================================
+@app.get("/api/analytics/sales-trend", response_model=schemas.SalesTrendReport)
+def get_sales_trend(
+    period: str = 'daily',
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """Get sales trend data for charts"""
+    return crud.get_sales_trend(db, period=period, days=days)
+
+
+@app.get("/api/analytics/top-products", response_model=List[schemas.TopProductItem])
+def get_top_products(limit: int = 10, db: Session = Depends(get_db)):
+    """Get top selling products by revenue"""
+    return crud.get_top_products(db, limit=limit)
+
+
+@app.get("/api/analytics/inventory-value", response_model=schemas.InventoryValueReport)
+def get_inventory_value(db: Session = Depends(get_db)):
+    """Get inventory value and stock health metrics"""
+    return crud.get_inventory_value(db)
+
+
+@app.get("/api/analytics/kpis", response_model=schemas.BusinessKPIs)
+def get_business_kpis(db: Session = Depends(get_db)):
+    """Get comprehensive business KPIs"""
+    return crud.get_business_kpis(db)
+
+
+@app.get("/api/analytics/top-customers", response_model=List[schemas.CustomerAnalyticsItem])
+def get_top_customers(limit: int = 10, db: Session = Depends(get_db)):
+    """Get top customers by purchase amount"""
+    return crud.get_top_customers(db, limit=limit)
+
+
+# ============================================
 # HEALTH CHECK
 # ============================================
 @app.get("/health")
@@ -348,3 +385,4 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
