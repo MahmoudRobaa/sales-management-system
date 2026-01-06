@@ -170,7 +170,10 @@ def get_product_by_code(db: Session, code: str):
 
 
 def create_product(db: Session, product: schemas.ProductCreate):
-    db_product = models.Product(**product.model_dump())
+    # Force quantity to 0 - stock only comes from purchases
+    product_data = product.model_dump()
+    product_data['quantity'] = 0
+    db_product = models.Product(**product_data)
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
@@ -181,6 +184,9 @@ def update_product(db: Session, product_id: int, product: schemas.ProductUpdate)
     db_product = get_product(db, product_id)
     if db_product:
         update_data = product.model_dump(exclude_unset=True)
+        # Prevent quantity changes from product form - quantity only changes via purchases/sales
+        if 'quantity' in update_data:
+            del update_data['quantity']
         for key, value in update_data.items():
             setattr(db_product, key, value)
         db.commit()
@@ -234,7 +240,7 @@ def get_products_with_details(db: Session, skip: int = 0, limit: int = 100, cate
 # SALE CRUD
 # ============================================
 def get_sales(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Sale).order_by(models.Sale.sale_date.desc()).offset(skip).limit(limit).all()
+    return db.query(models.Sale).order_by(models.Sale.id.desc()).offset(skip).limit(limit).all()
 
 
 def get_sale(db: Session, sale_id: int):
@@ -296,6 +302,7 @@ def create_sale(db: Session, sale: schemas.SaleCreate):
         paid=sale.paid,
         remaining=max(remaining, Decimal("0")),
         status=status,
+        payment_method=sale.payment_method if sale.paid > 0 else None,
         notes=sale.notes
     )
     db.add(db_sale)
@@ -380,7 +387,7 @@ def delete_sale(db: Session, sale_id: int):
 # PURCHASE CRUD
 # ============================================
 def get_purchases(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Purchase).order_by(models.Purchase.purchase_date.desc()).offset(skip).limit(limit).all()
+    return db.query(models.Purchase).order_by(models.Purchase.id.desc()).offset(skip).limit(limit).all()
 
 
 def get_purchase(db: Session, purchase_id: int):
@@ -435,6 +442,7 @@ def create_purchase(db: Session, purchase: schemas.PurchaseCreate):
         paid=purchase.paid,
         remaining=max(remaining, Decimal("0")),
         status=status,
+        payment_method=purchase.payment_method if purchase.paid > 0 else None,
         notes=purchase.notes
     )
     db.add(db_purchase)

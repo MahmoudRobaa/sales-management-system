@@ -46,6 +46,16 @@ export const ProductsAPI = {
     create: (data) => api.post('/products', data).then(res => res.data),
     update: (id, data) => api.put(`/products/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/products/${id}`).then(res => res.data),
+    exportCSV: () => {
+        window.open('http://localhost:8000/api/products/export-csv', '_blank');
+    },
+    importCSV: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/products/import-csv', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        }).then(res => res.data);
+    },
 };
 
 // Sales API
@@ -99,6 +109,8 @@ export const AnalyticsAPI = {
     getInventoryValue: () => api.get('/analytics/inventory-value').then(res => res.data),
     getKPIs: () => api.get('/analytics/kpis').then(res => res.data),
     getTopCustomers: (limit = 10) => api.get(`/analytics/top-customers?limit=${limit}`).then(res => res.data),
+    getFinancialReports: (period = 'month') => api.get(`/analytics/financial-reports?period=${period}`).then(res => res.data),
 };
 
 export default api;
+

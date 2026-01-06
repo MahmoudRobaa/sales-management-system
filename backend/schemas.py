@@ -204,6 +204,7 @@ class SaleBase(BaseModel):
     sale_date: Optional[date] = None
     discount: Decimal = Decimal("0")
     paid: Decimal = Decimal("0")
+    payment_method: Optional[str] = "كاش"
     notes: Optional[str] = None
 
 
@@ -223,6 +224,7 @@ class SaleResponse(BaseModel):
     paid: Decimal
     remaining: Decimal
     status: str
+    payment_method: Optional[str] = None
     notes: Optional[str] = None
     items: List[SaleItemResponse] = []
     created_at: Optional[datetime] = None
@@ -267,6 +269,7 @@ class PurchaseBase(BaseModel):
     purchase_date: Optional[date] = None
     discount: Decimal = Decimal("0")
     paid: Decimal = Decimal("0")
+    payment_method: Optional[str] = "كاش"
     notes: Optional[str] = None
 
 
@@ -286,6 +289,7 @@ class PurchaseResponse(BaseModel):
     paid: Decimal
     remaining: Decimal
     status: str
+    payment_method: Optional[str] = None
     notes: Optional[str] = None
     items: List[PurchaseItemResponse] = []
     created_at: Optional[datetime] = None

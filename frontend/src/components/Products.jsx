@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ProductsAPI, CategoriesAPI, SuppliersAPI } from '../services/api'
 
 function Products() {
@@ -9,6 +9,9 @@ function Products() {
     const [showModal, setShowModal] = useState(false)
     const [editingProduct, setEditingProduct] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [importing, setImporting] = useState(false)
+    const [importResult, setImportResult] = useState(null)
+    const fileInputRef = useRef(null)
     const [formData, setFormData] = useState({
         code: '',
         name: '',
@@ -54,7 +57,7 @@ function Products() {
             supplier_id: '',
             purchase_price: '',
             sale_price: '',
-            quantity: '',
+            quantity: 0, // Always starts at 0 - stock added via purchases
             min_quantity: '5',
             description: ''
         })
@@ -104,7 +107,7 @@ function Products() {
                 supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
                 purchase_price: parseFloat(formData.purchase_price),
                 sale_price: parseFloat(formData.sale_price),
-                quantity: parseInt(formData.quantity),
+                quantity: editingProduct ? parseInt(formData.quantity) : 0, // New products always start at 0
                 min_quantity: parseInt(formData.min_quantity)
             }
 
@@ -119,6 +122,36 @@ function Products() {
         } catch (error) {
             console.error('Error saving product:', error)
             alert(error.response?.data?.detail || 'خطأ في حفظ المنتج')
+        }
+    }
+
+    const handleExport = () => {
+        ProductsAPI.exportCSV()
+    }
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click()
+    }
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        try {
+            setImporting(true)
+            const result = await ProductsAPI.importCSV(file)
+            setImportResult(result)
+            loadData() // Refresh products list
+        } catch (error) {
+            console.error('Error importing:', error)
+            setImportResult({
+                imported: 0,
+                errors: [error.response?.data?.detail || 'فشل استيراد الملف'],
+                total_errors: 1
+            })
+        } finally {
+            setImporting(false)
+            e.target.value = '' // Reset file input
         }
     }
 
@@ -140,9 +173,29 @@ function Products() {
         <>
             <div className="page-header">
                 <h1>كارتة الأصناف</h1>
-                <button className="btn btn-primary" onClick={handleAdd}>
-                    <i className="fas fa-plus"></i> إضافة صنف جديد
-                </button>
+                <div className="header-actions">
+                    <button className="btn btn-success" onClick={handleExport} title="تصدير CSV">
+                        <i className="fas fa-file-export"></i> تصدير
+                    </button>
+                    <button
+                        className="btn btn-info"
+                        onClick={handleImportClick}
+                        disabled={importing}
+                        title="استيراد CSV"
+                    >
+                        <i className="fas fa-file-import"></i> {importing ? 'جاري...' : 'استيراد'}
+                    </button>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept=".csv"
+                        style={{ display: 'none' }}
+                    />
+                    <button className="btn btn-primary" onClick={handleAdd}>
+                        <i className="fas fa-plus"></i> إضافة صنف جديد
+                    </button>
+                </div>
             </div>
 
             <div className="card">
@@ -288,17 +341,24 @@ function Products() {
 
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label>الكمية</label>
-                                        <input
-                                            type="number"
-                                            className="form-control"
-                                            value={formData.quantity}
-                                            onChange={e => setFormData({ ...formData, quantity: e.target.value })}
-                                            required
-                                        />
+                                        <label>الكمية الحالية</label>
+                                        {editingProduct ? (
+                                            <input
+                                                type="number"
+                                                className="form-control"
+                                                value={formData.quantity}
+                                                disabled
+                                                style={{ background: '#f1f5f9', cursor: 'not-allowed' }}
+                                            />
+                                        ) : (
+                                            <div className="stock-info-box">
+                                                <i className="fas fa-info-circle"></i>
+                                                <span>الكمية تبدأ من 0 - أضف المخزون من خلال المشتريات</span>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="form-group">
-                                        <label>الحد الأدنى</label>
+                                        <label>الحد الأدنى للتنبيه</label>
                                         <input
                                             type="number"
                                             className="form-control"
@@ -326,8 +386,48 @@ function Products() {
                     </div>
                 </div>
             )}
+
+            {/* Import Result Modal */}
+            {importResult && (
+                <div className="modal-overlay" onClick={() => setImportResult(null)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <h3>نتيجة الاستيراد</h3>
+                            <button className="modal-close" onClick={() => setImportResult(null)}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="import-result">
+                                <div className={`result-item ${importResult.imported > 0 ? 'success' : ''}`}>
+                                    <i className="fas fa-check-circle"></i>
+                                    <span>تم استيراد: {importResult.imported} صنف</span>
+                                </div>
+                                {importResult.total_errors > 0 && (
+                                    <div className="result-item error">
+                                        <i className="fas fa-exclamation-circle"></i>
+                                        <span>أخطاء: {importResult.total_errors}</span>
+                                    </div>
+                                )}
+                                {importResult.errors?.length > 0 && (
+                                    <div className="error-list">
+                                        <h4>تفاصيل الأخطاء:</h4>
+                                        <ul>
+                                            {importResult.errors.map((err, i) => (
+                                                <li key={i}>{err}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-primary" onClick={() => setImportResult(null)}>حسناً</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     )
 }
 
 export default Products
+
