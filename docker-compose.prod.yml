@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sales_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: salesadmin
+      POSTGRES_PASSWORD: salespass123
+      POSTGRES_DB: sales_management
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U salesadmin -d sales_management" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sales_network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sales_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://salesadmin:salespass123@postgres:5432/sales_management
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sales_network
+
+  # React Frontend with Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sales_frontend
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    depends_on:
+      - backend
+    networks:
+      - sales_network
+
+volumes:
+  postgres_data:
+
+
+networks:
+  sales_network:
+    driver: bridge
