@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DashboardAPI, SalesAPI, AnalyticsAPI } from '../services/api';
+import { DashboardAPI, SalesAPI, AnalyticsAPI, CashAPI } from '../services/api';
 import {
     AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -13,6 +13,7 @@ function Dashboard() {
     const [inventoryHealth, setInventoryHealth] = useState(null);
     const [lowStock, setLowStock] = useState([]);
     const [recentSales, setRecentSales] = useState([]);
+    const [cashBalance, setCashBalance] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -25,15 +26,17 @@ function Dashboard() {
             setLoading(true);
             setError(null);
 
-            const [statsData, lowStockData, salesData] = await Promise.all([
+            const [statsData, lowStockData, salesData, cashData] = await Promise.all([
                 DashboardAPI.getStats().catch(() => null),
                 DashboardAPI.getLowStock().catch(() => []),
-                SalesAPI.getAll().catch(() => [])
+                SalesAPI.getAll().catch(() => []),
+                CashAPI.getBalance().catch(() => ({ balance: 0 }))
             ]);
 
             setStats(statsData);
             setLowStock(lowStockData || []);
             setRecentSales((salesData || []).slice(0, 5));
+            setCashBalance(cashData?.balance || 0);
 
             try {
                 const [kpisData, trendData, productsData, inventoryData] = await Promise.all([
@@ -161,6 +164,30 @@ function Dashboard() {
                     <i className="fas fa-sync-alt"></i>
                     تحديث
                 </button>
+            </div>
+
+            {/* Cash Balance Card - Prominent */}
+            <div className="card" style={{
+                marginBottom: '24px',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: 'white',
+                padding: '24px 30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+            }}>
+                <div>
+                    <div style={{ fontSize: '0.9rem', opacity: 0.9, marginBottom: '4px' }}>
+                        <i className="fas fa-cash-register" style={{ marginLeft: '8px' }}></i>
+                        رصيد الصندوق الحالي
+                    </div>
+                    <div style={{ fontSize: '2.5rem', fontWeight: '700' }}>
+                        {formatNumber(cashBalance || 0)} <span style={{ fontSize: '1.2rem' }}>EGP</span>
+                    </div>
+                </div>
+                <div style={{ textAlign: 'center', opacity: 0.9 }}>
+                    <i className="fas fa-wallet" style={{ fontSize: '3rem' }}></i>
+                </div>
             </div>
 
             {/* Main Stats Cards */}
@@ -415,7 +442,7 @@ function Dashboard() {
                                         <td>{formatCurrencyArabic(sale.total)}</td>
                                         <td>
                                             <span className={`status-badge ${sale.status === 'مدفوعة' ? 'paid' :
-                                                    sale.status === 'جزئي' ? 'partial' : 'unpaid'
+                                                sale.status === 'جزئي' ? 'partial' : 'unpaid'
                                                 }`}>
                                                 {sale.status}
                                             </span>

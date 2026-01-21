@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { SalesAPI, ProductsAPI, CustomersAPI } from '../services/api'
 
-function Sales() {
+function Sales({ user }) {
     const [sales, setSales] = useState([])
     const [products, setProducts] = useState([])
     const [customers, setCustomers] = useState([])
@@ -9,6 +9,7 @@ function Sales() {
     const [showModal, setShowModal] = useState(false)
     const [showDetailsModal, setShowDetailsModal] = useState(false)
     const [selectedSale, setSelectedSale] = useState(null)
+    const [editingSale, setEditingSale] = useState(null)
     const [saleItems, setSaleItems] = useState([])
     const [formData, setFormData] = useState({
         customer_id: '',
@@ -21,6 +22,9 @@ function Sales() {
     const [selectedProduct, setSelectedProduct] = useState('')
     const [quantity, setQuantity] = useState(1)
     const [unitPrice, setUnitPrice] = useState('')
+
+    // Check if user can edit (admin or manager)
+    const canEdit = user && (user.role === 'admin' || user.role === 'manager')
 
     useEffect(() => {
         loadData()
@@ -114,22 +118,31 @@ function Sales() {
             }
         }
 
+        const saleData = {
+            customer_id: formData.customer_id ? parseInt(formData.customer_id) : null,
+            sale_date: formData.sale_date,
+            discount: parseFloat(formData.discount) || 0,
+            paid: paidAmount,
+            payment_method: paidAmount > 0 ? formData.payment_method : null,
+            notes: formData.notes,
+            items: saleItems.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_price: item.unit_price
+            }))
+        }
+
         try {
-            await SalesAPI.create({
-                customer_id: formData.customer_id ? parseInt(formData.customer_id) : null,
-                sale_date: formData.sale_date,
-                discount: parseFloat(formData.discount) || 0,
-                paid: paidAmount,
-                payment_method: paidAmount > 0 ? formData.payment_method : null,
-                notes: formData.notes,
-                items: saleItems.map(item => ({
-                    product_id: item.product_id,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price
-                }))
-            })
+            if (editingSale) {
+                // Update existing sale
+                await SalesAPI.update(editingSale.id, saleData)
+            } else {
+                // Create new sale
+                await SalesAPI.create(saleData)
+            }
             setShowModal(false)
             setSaleItems([])
+            setEditingSale(null)
             setFormData({ customer_id: '', sale_date: new Date().toISOString().split('T')[0], payment_method: 'كاش', discount: 0, paid: 0, notes: '' })
             loadData()
         } catch (error) {
@@ -151,8 +164,36 @@ function Sales() {
 
     const openModal = () => {
         setSaleItems([])
+        setEditingSale(null)
         setFormData({ customer_id: '', sale_date: new Date().toISOString().split('T')[0], payment_method: 'كاش', discount: 0, paid: 0, notes: '' })
         setShowModal(true)
+    }
+
+    const openEditModal = async (sale) => {
+        try {
+            const details = await SalesAPI.getById(sale.id)
+            setEditingSale(details)
+            setFormData({
+                customer_id: details.customer_id || '',
+                sale_date: details.sale_date,
+                payment_method: details.payment_method || 'كاش',
+                discount: details.discount || 0,
+                paid: details.paid || 0,
+                notes: details.notes || ''
+            })
+            // Convert sale items to edit format
+            setSaleItems(details.items.map(item => ({
+                product_id: item.product_id,
+                name: item.product_name,
+                quantity: item.quantity,
+                unit_price: parseFloat(item.unit_price),
+                total: parseFloat(item.total)
+            })))
+            setShowModal(true)
+        } catch (error) {
+            console.error('Error loading sale for edit:', error)
+            alert('خطأ في تحميل بيانات الفاتورة')
+        }
     }
 
     const viewDetails = async (sale) => {
@@ -243,12 +284,19 @@ function Sales() {
                                             <button className="action-btn view" onClick={() => viewDetails(sale)} title="عرض التفاصيل">
                                                 <i className="fas fa-eye"></i>
                                             </button>
+                                            {canEdit && (
+                                                <button className="action-btn edit" onClick={() => openEditModal(sale)} title="تعديل">
+                                                    <i className="fas fa-edit"></i>
+                                                </button>
+                                            )}
                                             <button className="action-btn print" onClick={() => viewDetails(sale)} title="طباعة">
                                                 <i className="fas fa-print"></i>
                                             </button>
-                                            <button className="action-btn delete" onClick={() => handleDelete(sale.id)} title="حذف">
-                                                <i className="fas fa-trash"></i>
-                                            </button>
+                                            {canEdit && (
+                                                <button className="action-btn delete" onClick={() => handleDelete(sale.id)} title="حذف">
+                                                    <i className="fas fa-trash"></i>
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -258,12 +306,12 @@ function Sales() {
                 </table>
             </div>
 
-            {/* Create Sale Modal */}
+            {/* Create/Edit Sale Modal */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
                     <div className="modal-content" style={{ maxWidth: '800px' }} onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>عملية بيع جديدة</h3>
+                            <h3>{editingSale ? `تعديل فاتورة ${editingSale.invoice_no}` : 'عملية بيع جديدة'}</h3>
                             <button className="modal-close" onClick={() => setShowModal(false)}>&times;</button>
                         </div>
                         <form onSubmit={handleSubmit}>

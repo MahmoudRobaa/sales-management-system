@@ -252,7 +252,7 @@ def generate_invoice_no(db: Session) -> str:
     return f"INV{str(count + 1).zfill(3)}"
 
 
-def create_sale(db: Session, sale: schemas.SaleCreate):
+def create_sale(db: Session, sale: schemas.SaleCreate, username: str = None):
     # Generate invoice number
     invoice_no = generate_invoice_no(db)
     
@@ -303,7 +303,8 @@ def create_sale(db: Session, sale: schemas.SaleCreate):
         remaining=max(remaining, Decimal("0")),
         status=status,
         payment_method=sale.payment_method if sale.paid > 0 else None,
-        notes=sale.notes
+        notes=sale.notes,
+        created_by=db.query(models.User).filter(models.User.username == username).first().id if username else None
     )
     db.add(db_sale)
     db.flush()
@@ -340,6 +341,21 @@ def create_sale(db: Session, sale: schemas.SaleCreate):
         if customer:
             customer.total_purchases += total
             customer.balance += max(remaining, Decimal("0"))
+    
+    # Record cash income from payment (non-blocking if cash tracking fails)
+    if sale.paid > 0:
+        try:
+            add_cash_transaction(
+                db=db,
+                transaction_type='sale_income',
+                amount=sale.paid,
+                reference_type='sale',
+                reference_id=db_sale.id,
+                description=f'بيع - فاتورة {invoice_no}',
+                user_id=None
+            )
+        except Exception as cash_error:
+            print(f"Warning: Could not record cash transaction: {cash_error}")
     
     db.commit()
     db.refresh(db_sale)
@@ -383,6 +399,126 @@ def delete_sale(db: Session, sale_id: int):
     return False
 
 
+def update_sale(db: Session, sale_id: int, sale: schemas.SaleCreate, username: str = None):
+    """Update an existing sale - reverses old inventory and applies new"""
+    db_sale = get_sale(db, sale_id)
+    if not db_sale:
+        raise ValueError(f"Sale {sale_id} not found")
+    
+    # Step 1: Restore old inventory (reverse the original sale)
+    old_customer = get_customer(db, db_sale.customer_id) if db_sale.customer_id else None
+    for item in db_sale.items:
+        if item.product_id:
+            product = get_product(db, item.product_id)
+            if product:
+                quantity_before = product.quantity
+                product.quantity += item.quantity
+                movement = models.InventoryMovement(
+                    product_id=product.id,
+                    movement_type='sale_reversal',
+                    quantity_before=quantity_before,
+                    quantity_change=item.quantity,
+                    quantity_after=product.quantity,
+                    reason='sale_edited',
+                    reference_type='sale',
+                    reference_id=sale_id
+                )
+                db.add(movement)
+    
+    # Reverse old customer balance
+    if old_customer:
+        old_customer.total_purchases = max(Decimal("0"), old_customer.total_purchases - db_sale.total)
+        old_customer.balance = max(Decimal("0"), old_customer.balance - db_sale.remaining)
+    
+    # Delete old sale items
+    for item in db_sale.items:
+        db.delete(item)
+    db.flush()
+    
+    # Step 2: Apply new sale data
+    customer_name = sale.customer_name or "عميل نقدي"
+    if sale.customer_id:
+        customer = get_customer(db, sale.customer_id)
+        if customer:
+            customer_name = customer.name
+    
+    subtotal = Decimal("0")
+    sale_items = []
+    
+    for item in sale.items:
+        product = get_product(db, item.product_id)
+        if not product:
+            raise ValueError(f"Product {item.product_id} not found")
+        if product.quantity < item.quantity:
+            raise ValueError(f"Insufficient stock for {product.name}. Available: {product.quantity}")
+        
+        unit_price = item.unit_price if item.unit_price else product.sale_price
+        item_total = unit_price * item.quantity
+        subtotal += item_total
+        
+        sale_items.append({
+            'product_id': item.product_id,
+            'product_name': product.name,
+            'quantity': item.quantity,
+            'unit_price': unit_price,
+            'total': item_total
+        })
+    
+    total = subtotal - sale.discount
+    remaining = total - sale.paid
+    status = "مدفوعة" if remaining <= 0 else ("جزئي" if sale.paid > 0 else "غير مدفوعة")
+    
+    # Update sale record
+    db_sale.customer_id = sale.customer_id
+    db_sale.customer_name = customer_name
+    db_sale.sale_date = sale.sale_date or date.today()
+    db_sale.subtotal = subtotal
+    db_sale.discount = sale.discount
+    db_sale.total = total
+    db_sale.paid = sale.paid
+    db_sale.remaining = max(remaining, Decimal("0"))
+    db_sale.status = status
+    db_sale.payment_method = sale.payment_method if sale.paid > 0 else None
+    db_sale.notes = sale.notes
+    db_sale.updated_by = db.query(models.User).filter(models.User.username == username).first().id if username else None
+    db.flush()
+    
+    # Create new sale items and update inventory
+    for item_data in sale_items:
+        db_item = models.SaleItem(
+            sale_id=db_sale.id,
+            **item_data
+        )
+        db.add(db_item)
+        
+        product = get_product(db, item_data['product_id'])
+        quantity_before = product.quantity
+        product.quantity -= item_data['quantity']
+        
+        movement = models.InventoryMovement(
+            product_id=product.id,
+            movement_type='sale',
+            quantity_before=quantity_before,
+            quantity_change=-item_data['quantity'],
+            quantity_after=product.quantity,
+            reason='sale_edited',
+            reference_type='sale',
+            reference_id=db_sale.id
+        )
+        db.add(movement)
+    
+    # Update new customer balance
+    if sale.customer_id:
+        new_customer = get_customer(db, sale.customer_id)
+        if new_customer:
+            new_customer.total_purchases += total
+            new_customer.balance += max(remaining, Decimal("0"))
+    
+    db.commit()
+    db.refresh(db_sale)
+    return db_sale
+
+
 # ============================================
 # PURCHASE CRUD
 # ============================================
@@ -399,7 +535,16 @@ def generate_purchase_invoice_no(db: Session) -> str:
     return f"PUR{str(count + 1).zfill(3)}"
 
 
-def create_purchase(db: Session, purchase: schemas.PurchaseCreate):
+def create_purchase(db: Session, purchase: schemas.PurchaseCreate, username: str = None, user_role: str = None):
+    """Create a purchase with cash validation.
+    
+    Args:
+        user_role: If 'admin', allows purchase even with insufficient cash (with warning returned).
+                  Other roles are blocked if cash is insufficient.
+    
+    Returns:
+        Tuple of (purchase_object, warning_message or None)
+    """
     invoice_no = generate_purchase_invoice_no(db)
     
     supplier_name = purchase.supplier_name
@@ -419,9 +564,19 @@ def create_purchase(db: Session, purchase: schemas.PurchaseCreate):
         item_total = item.unit_price * item.quantity
         subtotal += item_total
         
+        # Get supplier information from the product
+        item_supplier_id = product.supplier_id
+        item_supplier_name = None
+        if item_supplier_id:
+            supplier = get_supplier(db, item_supplier_id)
+            if supplier:
+                item_supplier_name = supplier.name
+        
         purchase_items.append({
             'product_id': item.product_id,
             'product_name': product.name,
+            'supplier_id': item_supplier_id,
+            'supplier_name': item_supplier_name,
             'quantity': item.quantity,
             'unit_price': item.unit_price,
             'total': item_total
@@ -430,6 +585,20 @@ def create_purchase(db: Session, purchase: schemas.PurchaseCreate):
     total = subtotal - purchase.discount
     remaining = total - purchase.paid
     status = "مدفوعة" if remaining <= 0 else ("جزئي" if purchase.paid > 0 else "غير مدفوعة")
+    
+    # Validate cash balance if paying now (non-blocking if cash tracking fails)
+    warning_message = None
+    if purchase.paid > 0:
+        try:
+            validation = validate_cash_for_purchase(db, purchase.paid, user_role or 'cashier')
+            if not validation['allowed']:
+                raise ValueError(validation['warning'])
+            warning_message = validation['warning']  # Will be None if sufficient funds
+        except ValueError:
+            raise  # Re-raise validation errors
+        except Exception as e:
+            print(f"Warning: Cash validation skipped: {e}")
+            warning_message = None
     
     db_purchase = models.Purchase(
         invoice_no=invoice_no,
@@ -443,7 +612,8 @@ def create_purchase(db: Session, purchase: schemas.PurchaseCreate):
         remaining=max(remaining, Decimal("0")),
         status=status,
         payment_method=purchase.payment_method if purchase.paid > 0 else None,
-        notes=purchase.notes
+        notes=purchase.notes,
+        created_by=db.query(models.User).filter(models.User.username == username).first().id if username else None
     )
     db.add(db_purchase)
     db.flush()
@@ -477,9 +647,24 @@ def create_purchase(db: Session, purchase: schemas.PurchaseCreate):
             supplier.total_purchases += total
             supplier.balance += max(remaining, Decimal("0"))
     
+    # Record cash expense from payment (non-blocking if cash tracking fails)
+    if purchase.paid > 0:
+        try:
+            add_cash_transaction(
+                db=db,
+                transaction_type='purchase_expense',
+                amount=purchase.paid,
+                reference_type='purchase',
+                reference_id=db_purchase.id,
+                description=f'شراء - فاتورة {invoice_no}',
+                user_id=None
+            )
+        except Exception as cash_error:
+            print(f"Warning: Could not record cash transaction: {cash_error}")
+    
     db.commit()
     db.refresh(db_purchase)
-    return db_purchase
+    return db_purchase, warning_message
 
 
 def delete_purchase(db: Session, purchase_id: int):
@@ -522,6 +707,139 @@ def delete_purchase(db: Session, purchase_id: int):
         db.commit()
         return True
     return False
+
+
+def update_purchase(db: Session, purchase_id: int, purchase: schemas.PurchaseCreate, username: str = None):
+    """Update an existing purchase - reverses old inventory and applies new"""
+    db_purchase = get_purchase(db, purchase_id)
+    if not db_purchase:
+        raise ValueError(f"Purchase {purchase_id} not found")
+    
+    # Step 1: Validate that reversing won't cause negative stock
+    for item in db_purchase.items:
+        if item.product_id:
+            product = get_product(db, item.product_id)
+            if product and product.quantity < item.quantity:
+                raise ValueError(f"Cannot edit: would result in negative stock for {product.name}")
+    
+    # Step 2: Reverse old inventory
+    old_supplier = get_supplier(db, db_purchase.supplier_id) if db_purchase.supplier_id else None
+    for item in db_purchase.items:
+        if item.product_id:
+            product = get_product(db, item.product_id)
+            if product:
+                quantity_before = product.quantity
+                product.quantity -= item.quantity
+                movement = models.InventoryMovement(
+                    product_id=product.id,
+                    movement_type='purchase_reversal',
+                    quantity_before=quantity_before,
+                    quantity_change=-item.quantity,
+                    quantity_after=product.quantity,
+                    reason='purchase_edited',
+                    reference_type='purchase',
+                    reference_id=purchase_id
+                )
+                db.add(movement)
+    
+    # Reverse old supplier balance
+    if old_supplier:
+        old_supplier.total_purchases = max(Decimal("0"), old_supplier.total_purchases - db_purchase.total)
+        old_supplier.balance = max(Decimal("0"), old_supplier.balance - db_purchase.remaining)
+    
+    # Delete old purchase items
+    for item in db_purchase.items:
+        db.delete(item)
+    db.flush()
+    
+    # Step 3: Apply new purchase data
+    supplier_name = purchase.supplier_name
+    if purchase.supplier_id:
+        supplier = get_supplier(db, purchase.supplier_id)
+        if supplier:
+            supplier_name = supplier.name
+    
+    subtotal = Decimal("0")
+    purchase_items = []
+    
+    for item in purchase.items:
+        product = get_product(db, item.product_id)
+        if not product:
+            raise ValueError(f"Product {item.product_id} not found")
+        
+        item_total = item.unit_price * item.quantity
+        subtotal += item_total
+        
+        item_supplier_id = product.supplier_id
+        item_supplier_name = None
+        if item_supplier_id:
+            item_supplier = get_supplier(db, item_supplier_id)
+            if item_supplier:
+                item_supplier_name = item_supplier.name
+        
+        purchase_items.append({
+            'product_id': item.product_id,
+            'product_name': product.name,
+            'supplier_id': item_supplier_id,
+            'supplier_name': item_supplier_name,
+            'quantity': item.quantity,
+            'unit_price': item.unit_price,
+            'total': item_total
+        })
+    
+    total = subtotal - purchase.discount
+    remaining = total - purchase.paid
+    status = "مدفوعة" if remaining <= 0 else ("جزئي" if purchase.paid > 0 else "غير مدفوعة")
+    
+    # Update purchase record
+    db_purchase.supplier_id = purchase.supplier_id
+    db_purchase.supplier_name = supplier_name
+    db_purchase.purchase_date = purchase.purchase_date or date.today()
+    db_purchase.subtotal = subtotal
+    db_purchase.discount = purchase.discount
+    db_purchase.total = total
+    db_purchase.paid = purchase.paid
+    db_purchase.remaining = max(remaining, Decimal("0"))
+    db_purchase.status = status
+    db_purchase.payment_method = purchase.payment_method if purchase.paid > 0 else None
+    db_purchase.notes = purchase.notes
+    db_purchase.updated_by = db.query(models.User).filter(models.User.username == username).first().id if username else None
+    db.flush()
+    
+    # Create new purchase items and update inventory
+    for item_data in purchase_items:
+        db_item = models.PurchaseItem(
+            purchase_id=db_purchase.id,
+            **item_data
+        )
+        db.add(db_item)
+        
+        product = get_product(db, item_data['product_id'])
+        quantity_before = product.quantity
+        product.quantity += item_data['quantity']
+        
+        movement = models.InventoryMovement(
+            product_id=product.id,
+            movement_type='purchase',
+            quantity_before=quantity_before,
+            quantity_change=item_data['quantity'],
+            quantity_after=product.quantity,
+            reason='purchase_edited',
+            reference_type='purchase',
+            reference_id=db_purchase.id
+        )
+        db.add(movement)
+    
+    # Update new supplier balance
+    if purchase.supplier_id:
+        new_supplier = get_supplier(db, purchase.supplier_id)
+        if new_supplier:
+            new_supplier.total_purchases += total
+            new_supplier.balance += max(remaining, Decimal("0"))
+    
+    db.commit()
+    db.refresh(db_purchase)
+    return db_purchase
 
 
 # ============================================
@@ -918,3 +1236,149 @@ def get_top_customers(db: Session, limit: int = 10):
     
     return result
 
+
+# ============================================
+# CASH MANAGEMENT CRUD
+# ============================================
+def get_cash_balance(db: Session) -> Decimal:
+    """Get the current cash balance from the latest transaction"""
+    last_transaction = db.query(models.CashTransaction).order_by(
+        models.CashTransaction.id.desc()
+    ).first()
+    
+    if last_transaction:
+        return last_transaction.balance_after
+    return Decimal("0")
+
+
+def get_cash_transactions(db: Session, skip: int = 0, limit: int = 100, transaction_type: str = None):
+    """Get list of cash transactions with optional filtering"""
+    query = db.query(models.CashTransaction)
+    if transaction_type:
+        query = query.filter(models.CashTransaction.transaction_type == transaction_type)
+    
+    transactions = query.order_by(models.CashTransaction.id.desc()).offset(skip).limit(limit).all()
+    
+    # Enrich with user names
+    result = []
+    for t in transactions:
+        user_name = None
+        if t.created_by:
+            user = db.query(models.User).filter(models.User.id == t.created_by).first()
+            if user:
+                user_name = user.full_name
+        
+        result.append({
+            'id': t.id,
+            'transaction_type': t.transaction_type,
+            'amount': t.amount,
+            'balance_before': t.balance_before,
+            'balance_after': t.balance_after,
+            'reference_type': t.reference_type,
+            'reference_id': t.reference_id,
+            'description': t.description,
+            'created_by': t.created_by,
+            'created_by_name': user_name,
+            'created_at': t.created_at
+        })
+    
+    return result
+
+
+def add_cash_transaction(
+    db: Session, 
+    transaction_type: str, 
+    amount: Decimal, 
+    reference_type: str = None,
+    reference_id: int = None,
+    description: str = None,
+    user_id: int = None
+) -> models.CashTransaction:
+    """Record a cash transaction (internal function used by other operations)"""
+    current_balance = get_cash_balance(db)
+    
+    # Calculate new balance based on transaction type
+    if transaction_type in ['deposit', 'sale_income', 'purchase_refund']:
+        new_balance = current_balance + amount
+    elif transaction_type in ['withdrawal', 'purchase_expense', 'sale_refund']:
+        new_balance = current_balance - amount
+    else:
+        raise ValueError(f"Unknown transaction type: {transaction_type}")
+    
+    transaction = models.CashTransaction(
+        transaction_type=transaction_type,
+        amount=amount,
+        balance_before=current_balance,
+        balance_after=new_balance,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        description=description,
+        created_by=user_id
+    )
+    db.add(transaction)
+    return transaction
+
+
+def deposit_capital(db: Session, amount: Decimal, description: str = None, user_id: int = None) -> models.CashTransaction:
+    """Owner deposits capital into the cash register"""
+    if amount <= 0:
+        raise ValueError("المبلغ يجب أن يكون أكبر من صفر")
+    
+    transaction = add_cash_transaction(
+        db=db,
+        transaction_type='deposit',
+        amount=amount,
+        reference_type='manual',
+        description=description or "إضافة رأس مال",
+        user_id=user_id
+    )
+    db.commit()
+    db.refresh(transaction)
+    return transaction
+
+
+def withdraw_capital(db: Session, amount: Decimal, description: str = None, user_id: int = None) -> models.CashTransaction:
+    """Owner withdraws capital from the cash register"""
+    if amount <= 0:
+        raise ValueError("المبلغ يجب أن يكون أكبر من صفر")
+    
+    current_balance = get_cash_balance(db)
+    if amount > current_balance:
+        raise ValueError(f"رصيد الصندوق غير كافٍ. المتاح: {current_balance}")
+    
+    transaction = add_cash_transaction(
+        db=db,
+        transaction_type='withdrawal',
+        amount=amount,
+        reference_type='manual',
+        description=description or "سحب رأس مال",
+        user_id=user_id
+    )
+    db.commit()
+    db.refresh(transaction)
+    return transaction
+
+
+def validate_cash_for_purchase(db: Session, amount: Decimal, user_role: str) -> dict:
+    """
+    Validate if there's enough cash for a purchase.
+    Returns: {'allowed': bool, 'warning': str or None, 'balance': Decimal}
+    
+    - Admin users get a warning but can proceed
+    - Other users are blocked if insufficient funds
+    """
+    current_balance = get_cash_balance(db)
+    
+    if amount <= current_balance:
+        return {'allowed': True, 'warning': None, 'balance': current_balance}
+    
+    # Insufficient funds
+    shortage = amount - current_balance
+    warning_msg = f"رصيد الصندوق غير كافٍ! المتاح: {current_balance} - المطلوب: {amount} - العجز: {shortage}"
+    
+    if user_role == 'admin':
+        # Admin can proceed with warning
+        return {'allowed': True, 'warning': warning_msg, 'balance': current_balance}
+    else:
+        # Non-admin is blocked
+        return {'allowed': False, 'warning': warning_msg, 'balance': current_balance}

@@ -240,6 +240,8 @@ class SaleResponse(BaseModel):
 class PurchaseItemBase(BaseModel):
     product_id: int
     product_name: str
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
     quantity: int
     unit_price: Decimal
     total: Decimal
@@ -446,3 +448,41 @@ class BusinessKPIs(BaseModel):
     revenue_growth: Decimal  # percentage
     orders_growth: Decimal   # percentage
 
+
+# ============================================
+# CASH TRANSACTION SCHEMAS
+# ============================================
+class CashDeposit(BaseModel):
+    """Request schema for depositing capital"""
+    amount: Decimal = Field(..., gt=0, description="Amount to deposit")
+    description: Optional[str] = "إضافة رأس مال"
+
+
+class CashWithdraw(BaseModel):
+    """Request schema for withdrawing capital"""
+    amount: Decimal = Field(..., gt=0, description="Amount to withdraw")
+    description: Optional[str] = "سحب رأس مال"
+
+
+class CashBalanceResponse(BaseModel):
+    """Current cash balance"""
+    balance: Decimal
+    last_updated: Optional[datetime] = None
+
+
+class CashTransactionResponse(BaseModel):
+    """Response schema for cash transactions"""
+    id: int
+    transaction_type: str
+    amount: Decimal
+    balance_before: Decimal
+    balance_after: Decimal
+    reference_type: Optional[str] = None
+    reference_id: Optional[int] = None
+    description: Optional[str] = None
+    created_by: Optional[int] = None
+    created_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

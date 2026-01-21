@@ -145,6 +145,8 @@ CREATE TABLE purchase_items (
     purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
     product_name VARCHAR(200),
+    supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+    supplier_name VARCHAR(200),
     quantity INTEGER NOT NULL DEFAULT 1,
     unit_price DECIMAL(15, 2) NOT NULL,
     total DECIMAL(15, 2) NOT NULL,
@@ -192,6 +194,7 @@ CREATE INDEX idx_sale_items_product ON sale_items(product_id);
 CREATE INDEX idx_purchases_supplier ON purchases(supplier_id);
 CREATE INDEX idx_purchases_date ON purchases(purchase_date);
 CREATE INDEX idx_purchase_items_purchase ON purchase_items(purchase_id);
+CREATE INDEX idx_purchase_items_supplier ON purchase_items(supplier_id);
 CREATE INDEX idx_inventory_movements_product ON inventory_movements(product_id);
 CREATE INDEX idx_inventory_movements_date ON inventory_movements(created_at);
 

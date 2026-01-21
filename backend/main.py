@@ -2,19 +2,27 @@
 Sales Management System - FastAPI Backend
 نظام إدارة المبيعات - الواجهة الخلفية
 """
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date, datetime, timedelta
 import csv
 import io
+import json
+import os
 
 from database import get_db, engine
 import models
 import schemas
 import crud
+from auth import (
+    get_password_hash, verify_password, create_access_token, 
+    get_current_user, get_current_user_optional, require_admin, require_manager, require_cashier,
+    Token, UserCreate, UserUpdate, UserResponse, TokenData, ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
 # Create database tables (if not exists)
 models.Base.metadata.create_all(bind=engine)
@@ -22,13 +30,15 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Sales Management System API",
     description="نظام إدارة المبيعات - API",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # CORS middleware for frontend access
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,11 +46,201 @@ app.add_middleware(
 
 
 # ============================================
+# ACTIVITY LOG HELPER
+# ============================================
+def log_activity(db: Session, user: Optional[TokenData], action: str, entity_type: str = None, 
+                 entity_id: int = None, entity_name: str = None, details: str = None, request: Request = None):
+    """Log user activity for audit trail"""
+    try:
+        ip_address = None
+        if request:
+            ip_address = request.client.host if request.client else None
+        
+        log = models.ActivityLog(
+            user_id=None,  # We'll get this from username lookup if needed
+            username=user.username if user else "anonymous",
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            details=details,
+            ip_address=ip_address
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        print(f"Error logging activity: {e}")
+
+
+# ============================================
 # ROOT ENDPOINT
 # ============================================
 @app.get("/")
 def read_root():
-    return {"message": "Sales Management System API", "version": "1.0.0"}
+    return {"message": "Sales Management System API", "version": "2.0.0"}
+
+
+# ============================================
+# AUTHENTICATION ENDPOINTS
+# ============================================
+@app.post("/api/auth/login", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Login and get access token"""
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    
+    if not user or not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="اسم المستخدم أو كلمة المرور غير صحيحة",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="الحساب غير مفعل")
+    
+    # Update last login
+    user.last_login = datetime.utcnow()
+    db.commit()
+    
+    access_token = create_access_token(
+        data={"sub": user.username, "role": user.role},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    
+    # Log login activity
+    log = models.ActivityLog(
+        user_id=user.id,
+        username=user.username,
+        action="login",
+        entity_type="auth"
+    )
+    db.add(log)
+    db.commit()
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user.role
+        }
+    }
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def get_current_user_info(current_user: TokenData = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get current user information"""
+    user = db.query(models.User).filter(models.User.username == current_user.username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@app.post("/api/auth/logout")
+def logout(current_user: TokenData = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Logout (logs the action)"""
+    user = db.query(models.User).filter(models.User.username == current_user.username).first()
+    if user:
+        log = models.ActivityLog(
+            user_id=user.id,
+            username=user.username,
+            action="logout",
+            entity_type="auth"
+        )
+        db.add(log)
+        db.commit()
+    return {"message": "تم تسجيل الخروج بنجاح"}
+
+
+# ============================================
+# USER MANAGEMENT ENDPOINTS (Admin only)
+# ============================================
+@app.get("/api/users", response_model=List[UserResponse])
+def get_users(current_user: TokenData = Depends(require_admin), db: Session = Depends(get_db)):
+    """Get all users (admin only)"""
+    return db.query(models.User).all()
+
+
+@app.post("/api/users", response_model=UserResponse)
+def create_user(user: UserCreate, current_user: TokenData = Depends(require_admin), db: Session = Depends(get_db)):
+    """Create new user (admin only)"""
+    existing = db.query(models.User).filter(models.User.username == user.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="اسم المستخدم موجود بالفعل")
+    
+    db_user = models.User(
+        username=user.username,
+        password_hash=get_password_hash(user.password),
+        full_name=user.full_name,
+        role=user.role
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    
+    log_activity(db, current_user, "create", "user", db_user.id, db_user.username)
+    return db_user
+
+
+@app.put("/api/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, user_update: UserUpdate, current_user: TokenData = Depends(require_admin), db: Session = Depends(get_db)):
+    """Update user (admin only)"""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+    
+    if user_update.full_name is not None:
+        db_user.full_name = user_update.full_name
+    if user_update.role is not None:
+        db_user.role = user_update.role
+    if user_update.is_active is not None:
+        db_user.is_active = user_update.is_active
+    if user_update.password is not None:
+        db_user.password_hash = get_password_hash(user_update.password)
+    
+    db.commit()
+    db.refresh(db_user)
+    
+    log_activity(db, current_user, "update", "user", db_user.id, db_user.username)
+    return db_user
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, current_user: TokenData = Depends(require_admin), db: Session = Depends(get_db)):
+    """Delete user (admin only)"""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+    
+    if db_user.username == "admin":
+        raise HTTPException(status_code=400, detail="لا يمكن حذف حساب المدير الرئيسي")
+    
+    username = db_user.username
+    db.delete(db_user)
+    db.commit()
+    
+    log_activity(db, current_user, "delete", "user", user_id, username)
+    return {"message": "تم حذف المستخدم بنجاح"}
+
+
+# ============================================
+# ACTIVITY LOGS ENDPOINT (Admin/Manager)
+# ============================================
+@app.get("/api/activity-logs")
+def get_activity_logs(
+    skip: int = 0, 
+    limit: int = 100,
+    entity_type: Optional[str] = None,
+    current_user: TokenData = Depends(require_manager), 
+    db: Session = Depends(get_db)
+):
+    """Get activity logs (admin/manager only)"""
+    query = db.query(models.ActivityLog).order_by(models.ActivityLog.created_at.desc())
+    if entity_type:
+        query = query.filter(models.ActivityLog.entity_type == entity_type)
+    return query.offset(skip).limit(limit).all()
 
 
 # ============================================
@@ -354,17 +554,46 @@ def get_sale(sale_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/sales", response_model=schemas.SaleResponse)
-def create_sale(sale: schemas.SaleCreate, db: Session = Depends(get_db)):
+def create_sale(
+    sale: schemas.SaleCreate, 
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_optional)
+):
     try:
-        return crud.create_sale(db, sale)
+        result = crud.create_sale(db, sale, username=current_user.username if current_user else None)
+        if current_user:
+            log_activity(db, current_user, "create", "sale", result.id, f"فاتورة بيع #{result.id}")
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/sales/{sale_id}", response_model=schemas.SaleResponse)
+def update_sale(
+    sale_id: int, 
+    sale: schemas.SaleCreate, 
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_manager)
+):
+    """Update/Edit an existing sale (manager only) - adjusts inventory accordingly"""
+    try:
+        result = crud.update_sale(db, sale_id, sale, username=current_user.username)
+        log_activity(db, current_user, "update", "sale", sale_id, f"تعديل فاتورة بيع #{sale_id}")
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.delete("/api/sales/{sale_id}")
-def delete_sale(sale_id: int, db: Session = Depends(get_db)):
+def delete_sale(
+    sale_id: int, 
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_manager)
+):
+    """Delete a sale (manager only) - restores inventory"""
     if not crud.delete_sale(db, sale_id):
         raise HTTPException(status_code=404, detail="Sale not found")
+    log_activity(db, current_user, "delete", "sale", sale_id, f"حذف فاتورة بيع #{sale_id}")
     return {"message": "Sale deleted successfully"}
 
 
@@ -385,17 +614,55 @@ def get_purchase(purchase_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/purchases", response_model=schemas.PurchaseResponse)
-def create_purchase(purchase: schemas.PurchaseCreate, db: Session = Depends(get_db)):
+def create_purchase(
+    purchase: schemas.PurchaseCreate, 
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_optional)
+):
     try:
-        return crud.create_purchase(db, purchase)
+        user_role = current_user.role if current_user else 'cashier'
+        result, warning = crud.create_purchase(
+            db, 
+            purchase, 
+            username=current_user.username if current_user else None,
+            user_role=user_role
+        )
+        if current_user:
+            log_activity(db, current_user, "create", "purchase", result.id, f"فاتورة شراء #{result.id}")
+        
+        # If there's a warning (admin with insufficient funds), we still return the purchase
+        # but the frontend should display the warning
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/purchases/{purchase_id}", response_model=schemas.PurchaseResponse)
+def update_purchase(
+    purchase_id: int, 
+    purchase: schemas.PurchaseCreate, 
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_manager)
+):
+    """Update/Edit an existing purchase (manager only) - adjusts inventory accordingly"""
+    try:
+        result = crud.update_purchase(db, purchase_id, purchase, username=current_user.username)
+        log_activity(db, current_user, "update", "purchase", purchase_id, f"تعديل فاتورة شراء #{purchase_id}")
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.delete("/api/purchases/{purchase_id}")
-def delete_purchase(purchase_id: int, db: Session = Depends(get_db)):
+def delete_purchase(
+    purchase_id: int, 
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_manager)
+):
+    """Delete a purchase (manager only) - reduces inventory"""
     if not crud.delete_purchase(db, purchase_id):
         raise HTTPException(status_code=404, detail="Purchase not found")
+    log_activity(db, current_user, "delete", "purchase", purchase_id, f"حذف فاتورة شراء #{purchase_id}")
     return {"message": "Purchase deleted successfully"}
 
 
@@ -605,6 +872,126 @@ def get_financial_reports(
         },
         'trend_data': trend_data
     }
+
+
+# ============================================
+# CASH MANAGEMENT ENDPOINTS
+# ============================================
+@app.get("/api/cash/balance", response_model=schemas.CashBalanceResponse)
+def get_cash_balance(
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_optional)
+):
+    """Get current cash balance"""
+    balance = crud.get_cash_balance(db)
+    
+    # Get last transaction for timestamp
+    transactions = crud.get_cash_transactions(db, limit=1)
+    last_updated = transactions[0]['created_at'] if transactions else None
+    
+    return {"balance": balance, "last_updated": last_updated}
+
+
+@app.get("/api/cash/transactions", response_model=List[schemas.CashTransactionResponse])
+def get_cash_transactions(
+    skip: int = 0,
+    limit: int = 100,
+    transaction_type: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_manager)
+):
+    """Get cash transaction history (manager+ only)"""
+    return crud.get_cash_transactions(db, skip=skip, limit=limit, transaction_type=transaction_type)
+
+
+@app.post("/api/cash/deposit", response_model=schemas.CashTransactionResponse)
+def deposit_capital(
+    deposit: schemas.CashDeposit,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_admin)
+):
+    """Deposit capital into the cash register (admin only)"""
+    try:
+        # Get user ID
+        user = db.query(models.User).filter(models.User.username == current_user.username).first()
+        user_id = user.id if user else None
+        
+        result = crud.deposit_capital(
+            db, 
+            amount=deposit.amount, 
+            description=deposit.description,
+            user_id=user_id
+        )
+        
+        log_activity(db, current_user, "create", "cash", result.id, f"إضافة رأس مال: {deposit.amount}")
+        
+        # Return with user name
+        return {
+            "id": result.id,
+            "transaction_type": result.transaction_type,
+            "amount": result.amount,
+            "balance_before": result.balance_before,
+            "balance_after": result.balance_after,
+            "reference_type": result.reference_type,
+            "reference_id": result.reference_id,
+            "description": result.description,
+            "created_by": result.created_by,
+            "created_by_name": user.full_name if user else None,
+            "created_at": result.created_at
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/cash/withdraw", response_model=schemas.CashTransactionResponse)
+def withdraw_capital(
+    withdraw: schemas.CashWithdraw,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(require_admin)
+):
+    """Withdraw capital from the cash register (admin only)"""
+    try:
+        # Get user ID
+        user = db.query(models.User).filter(models.User.username == current_user.username).first()
+        user_id = user.id if user else None
+        
+        result = crud.withdraw_capital(
+            db, 
+            amount=withdraw.amount, 
+            description=withdraw.description,
+            user_id=user_id
+        )
+        
+        log_activity(db, current_user, "create", "cash", result.id, f"سحب رأس مال: {withdraw.amount}")
+        
+        return {
+            "id": result.id,
+            "transaction_type": result.transaction_type,
+            "amount": result.amount,
+            "balance_before": result.balance_before,
+            "balance_after": result.balance_after,
+            "reference_type": result.reference_type,
+            "reference_id": result.reference_id,
+            "description": result.description,
+            "created_by": result.created_by,
+            "created_by_name": user.full_name if user else None,
+            "created_at": result.created_at
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/cash/validate")
+def validate_cash_for_purchase(
+    amount: float,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_optional)
+):
+    """Validate if cash is sufficient for a purchase amount"""
+    from decimal import Decimal
+    user_role = current_user.role if current_user else 'cashier'
+    result = crud.validate_cash_for_purchase(db, Decimal(str(amount)), user_role)
+    return result
 
 
 # ============================================

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { SettingsAPI, CategoriesAPI } from '../services/api'
+import { SettingsAPI, CategoriesAPI, CashAPI } from '../services/api'
 
 function Settings() {
     const [settings, setSettings] = useState({
@@ -15,6 +15,13 @@ function Settings() {
     const [showCategoryModal, setShowCategoryModal] = useState(false)
     const [editingCategory, setEditingCategory] = useState(null)
     const [categoryForm, setCategoryForm] = useState({ code: '', name: '', name_ar: '', description: '' })
+    // Cash management state
+    const [cashBalance, setCashBalance] = useState(0)
+    const [cashTransactions, setCashTransactions] = useState([])
+    const [showCashModal, setShowCashModal] = useState(null) // 'deposit' or 'withdraw'
+    const [cashAmount, setCashAmount] = useState('')
+    const [cashDescription, setCashDescription] = useState('')
+    const [cashLoading, setCashLoading] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -23,9 +30,11 @@ function Settings() {
     const loadData = async () => {
         try {
             setLoading(true)
-            const [settingsData, categoriesData] = await Promise.all([
+            const [settingsData, categoriesData, cashData, transactionsData] = await Promise.all([
                 SettingsAPI.getAll(),
-                CategoriesAPI.getAll()
+                CategoriesAPI.getAll(),
+                CashAPI.getBalance().catch(() => ({ balance: 0 })),
+                CashAPI.getTransactions(20).catch(() => [])
             ])
 
             const settingsObj = {}
@@ -41,6 +50,8 @@ function Settings() {
             })
 
             setCategories(categoriesData)
+            setCashBalance(cashData?.balance || 0)
+            setCashTransactions(transactionsData || [])
         } catch (error) {
             console.error('Error loading settings:', error)
         } finally {
@@ -119,6 +130,33 @@ function Settings() {
         }
     }
 
+    // Cash deposit/withdraw handler
+    const handleCashSubmit = async (e) => {
+        e.preventDefault()
+        if (!cashAmount || parseFloat(cashAmount) <= 0) {
+            alert('يرجى إدخال مبلغ صحيح')
+            return
+        }
+
+        setCashLoading(true)
+        try {
+            if (showCashModal === 'deposit') {
+                await CashAPI.deposit(parseFloat(cashAmount), cashDescription)
+                alert('تم إضافة رأس المال بنجاح')
+            } else {
+                await CashAPI.withdraw(parseFloat(cashAmount), cashDescription)
+                alert('تم سحب المبلغ بنجاح')
+            }
+            setShowCashModal(null)
+            loadData() // Refresh data
+        } catch (error) {
+            console.error('Cash operation error:', error)
+            alert(error.response?.data?.detail || 'حدث خطأ في العملية')
+        } finally {
+            setCashLoading(false)
+        }
+    }
+
     if (loading) {
         return <div className="loading"><div className="loading-spinner"></div><span>جاري التحميل...</span></div>
     }
@@ -127,6 +165,91 @@ function Settings() {
         <>
             <div className="page-header">
                 <h1>الإعدادات</h1>
+            </div>
+
+            {/* Capital Management Section */}
+            <div className="card" style={{ marginBottom: '25px', background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' }}>
+                <div className="card-header" style={{ borderBottom: '1px solid #86efac' }}>
+                    <h2><i className="fas fa-cash-register"></i> إدارة رأس المال</h2>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                    <div>
+                        <div style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '4px' }}>رصيد الصندوق الحالي</div>
+                        <div style={{ fontSize: '2rem', fontWeight: '700', color: '#059669' }}>
+                            {Number(cashBalance).toLocaleString()} EGP
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                            className="btn btn-success"
+                            onClick={() => { setShowCashModal('deposit'); setCashAmount(''); setCashDescription('إضافة رأس مال'); }}
+                        >
+                            <i className="fas fa-plus"></i> إضافة رأس مال
+                        </button>
+                        <button
+                            className="btn btn-danger"
+                            onClick={() => { setShowCashModal('withdraw'); setCashAmount(''); setCashDescription('سحب رأس مال'); }}
+                            disabled={cashBalance <= 0}
+                        >
+                            <i className="fas fa-minus"></i> سحب
+                        </button>
+                    </div>
+                </div>
+
+                {/* Recent Transactions */}
+                {cashTransactions.length > 0 && (
+                    <div>
+                        <h4 style={{ marginBottom: '12px', color: '#374151' }}>آخر الحركات</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>النوع</th>
+                                    <th>المبلغ</th>
+                                    <th>الرصيد بعد</th>
+                                    <th>الوصف</th>
+                                    <th>التاريخ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {cashTransactions.slice(0, 10).map(t => (
+                                    <tr key={t.id}>
+                                        <td>
+                                            <span style={{
+                                                padding: '4px 10px',
+                                                borderRadius: '12px',
+                                                fontSize: '0.8rem',
+                                                fontWeight: '500',
+                                                background: t.transaction_type.includes('income') || t.transaction_type === 'deposit'
+                                                    ? '#dcfce7' : '#fee2e2',
+                                                color: t.transaction_type.includes('income') || t.transaction_type === 'deposit'
+                                                    ? '#166534' : '#991b1b'
+                                            }}>
+                                                {t.transaction_type === 'deposit' ? 'إيداع' :
+                                                    t.transaction_type === 'withdrawal' ? 'سحب' :
+                                                        t.transaction_type === 'sale_income' ? 'بيع' :
+                                                            t.transaction_type === 'purchase_expense' ? 'شراء' : t.transaction_type}
+                                            </span>
+                                        </td>
+                                        <td style={{
+                                            fontWeight: '600',
+                                            color: t.transaction_type.includes('income') || t.transaction_type === 'deposit'
+                                                ? '#059669' : '#dc2626'
+                                        }}>
+                                            {t.transaction_type.includes('income') || t.transaction_type === 'deposit' ? '+' : '-'}
+                                            {Number(t.amount).toLocaleString()}
+                                        </td>
+                                        <td>{Number(t.balance_after).toLocaleString()}</td>
+                                        <td>{t.description || '-'}</td>
+                                        <td style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                            {t.created_at ? new Date(t.created_at).toLocaleDateString('ar-EG') : '-'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {/* Store Settings */}
@@ -288,6 +411,75 @@ function Settings() {
                             <div className="modal-footer">
                                 <button type="button" className="btn" onClick={() => setShowCategoryModal(false)}>إلغاء</button>
                                 <button type="submit" className="btn btn-primary">حفظ</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Cash Deposit/Withdraw Modal */}
+            {showCashModal && (
+                <div className="modal-overlay" onClick={() => setShowCashModal(null)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header" style={{
+                            background: showCashModal === 'deposit'
+                                ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                                : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                        }}>
+                            <h3>
+                                <i className={`fas fa-${showCashModal === 'deposit' ? 'plus' : 'minus'}`}></i>
+                                {showCashModal === 'deposit' ? ' إضافة رأس مال' : ' سحب رأس مال'}
+                            </h3>
+                            <button className="modal-close" onClick={() => setShowCashModal(null)}>&times;</button>
+                        </div>
+                        <form onSubmit={handleCashSubmit}>
+                            <div className="modal-body">
+                                <div className="form-group">
+                                    <label>المبلغ (EGP)</label>
+                                    <input
+                                        type="number"
+                                        className="form-control"
+                                        value={cashAmount}
+                                        onChange={e => setCashAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        min="0.01"
+                                        step="0.01"
+                                        required
+                                        autoFocus
+                                        style={{ fontSize: '1.5rem', textAlign: 'center' }}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>الوصف</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={cashDescription}
+                                        onChange={e => setCashDescription(e.target.value)}
+                                        placeholder={showCashModal === 'deposit' ? 'إضافة رأس مال' : 'سحب رأس مال'}
+                                    />
+                                </div>
+                                {showCashModal === 'withdraw' && (
+                                    <div style={{
+                                        background: '#fef2f2',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        color: '#991b1b',
+                                        fontSize: '0.9rem'
+                                    }}>
+                                        <i className="fas fa-info-circle"></i> الرصيد المتاح: {Number(cashBalance).toLocaleString()} EGP
+                                    </div>
+                                )}
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn" onClick={() => setShowCashModal(null)}>إلغاء</button>
+                                <button
+                                    type="submit"
+                                    className={`btn ${showCashModal === 'deposit' ? 'btn-success' : 'btn-danger'}`}
+                                    disabled={cashLoading}
+                                >
+                                    {cashLoading ? 'جاري...' : (showCashModal === 'deposit' ? 'إضافة' : 'سحب')}
+                                </button>
                             </div>
                         </form>
                     </div>

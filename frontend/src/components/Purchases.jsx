@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { PurchasesAPI, ProductsAPI, SuppliersAPI } from '../services/api'
 
-function Purchases() {
+function Purchases({ user }) {
     const [purchases, setPurchases] = useState([])
     const [products, setProducts] = useState([])
     const [suppliers, setSuppliers] = useState([])
@@ -9,6 +9,7 @@ function Purchases() {
     const [showModal, setShowModal] = useState(false)
     const [showDetailsModal, setShowDetailsModal] = useState(false)
     const [selectedPurchase, setSelectedPurchase] = useState(null)
+    const [editingPurchase, setEditingPurchase] = useState(null)
     const [purchaseItems, setPurchaseItems] = useState([])
     const [formData, setFormData] = useState({
         supplier_id: '',
@@ -21,6 +22,9 @@ function Purchases() {
     const [selectedProduct, setSelectedProduct] = useState('')
     const [quantity, setQuantity] = useState(1)
     const [unitPrice, setUnitPrice] = useState('')
+
+    // Check if user can edit (admin or manager)
+    const canEdit = user && (user.role === 'admin' || user.role === 'manager')
 
     useEffect(() => {
         loadData()
@@ -57,6 +61,10 @@ function Purchases() {
         const price = unitPrice || product.purchase_price
         const total = price * quantity
 
+        // Get supplier information from the product
+        const supplier = suppliers.find(s => s.id === product.supplier_id)
+        const supplierName = supplier ? supplier.name : null
+
         const existingIndex = purchaseItems.findIndex(item => item.product_id === product.id)
         if (existingIndex !== -1) {
             const newItems = [...purchaseItems]
@@ -67,6 +75,7 @@ function Purchases() {
             setPurchaseItems([...purchaseItems, {
                 product_id: product.id,
                 name: product.name,
+                supplier_name: supplierName,
                 quantity,
                 unit_price: parseFloat(price),
                 total
@@ -109,22 +118,31 @@ function Purchases() {
             }
         }
 
+        const purchaseData = {
+            supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
+            purchase_date: formData.purchase_date,
+            discount: parseFloat(formData.discount) || 0,
+            paid: paidAmount,
+            payment_method: paidAmount > 0 ? formData.payment_method : null,
+            notes: formData.notes,
+            items: purchaseItems.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_price: item.unit_price
+            }))
+        }
+
         try {
-            await PurchasesAPI.create({
-                supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
-                purchase_date: formData.purchase_date,
-                discount: parseFloat(formData.discount) || 0,
-                paid: paidAmount,
-                payment_method: paidAmount > 0 ? formData.payment_method : null,
-                notes: formData.notes,
-                items: purchaseItems.map(item => ({
-                    product_id: item.product_id,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price
-                }))
-            })
+            if (editingPurchase) {
+                // Update existing purchase
+                await PurchasesAPI.update(editingPurchase.id, purchaseData)
+            } else {
+                // Create new purchase
+                await PurchasesAPI.create(purchaseData)
+            }
             setShowModal(false)
             setPurchaseItems([])
+            setEditingPurchase(null)
             setFormData({ supplier_id: '', purchase_date: new Date().toISOString().split('T')[0], payment_method: 'كاش', discount: 0, paid: 0, notes: '' })
             loadData()
         } catch (error) {
@@ -147,8 +165,37 @@ function Purchases() {
 
     const openModal = () => {
         setPurchaseItems([])
+        setEditingPurchase(null)
         setFormData({ supplier_id: '', purchase_date: new Date().toISOString().split('T')[0], payment_method: 'كاش', discount: 0, paid: 0, notes: '' })
         setShowModal(true)
+    }
+
+    const openEditModal = async (purchase) => {
+        try {
+            const details = await PurchasesAPI.getById(purchase.id)
+            setEditingPurchase(details)
+            setFormData({
+                supplier_id: details.supplier_id || '',
+                purchase_date: details.purchase_date,
+                payment_method: details.payment_method || 'كاش',
+                discount: details.discount || 0,
+                paid: details.paid || 0,
+                notes: details.notes || ''
+            })
+            // Convert purchase items to edit format
+            setPurchaseItems(details.items.map(item => ({
+                product_id: item.product_id,
+                name: item.product_name,
+                supplier_name: item.supplier_name,
+                quantity: item.quantity,
+                unit_price: parseFloat(item.unit_price),
+                total: parseFloat(item.total)
+            })))
+            setShowModal(true)
+        } catch (error) {
+            console.error('Error loading purchase for edit:', error)
+            alert('خطأ في تحميل بيانات الفاتورة')
+        }
     }
 
     const viewDetails = async (purchase) => {
@@ -245,12 +292,19 @@ function Purchases() {
                                             <button className="action-btn view" onClick={() => viewDetails(purchase)} title="عرض التفاصيل">
                                                 <i className="fas fa-eye"></i>
                                             </button>
+                                            {canEdit && (
+                                                <button className="action-btn edit" onClick={() => openEditModal(purchase)} title="تعديل">
+                                                    <i className="fas fa-edit"></i>
+                                                </button>
+                                            )}
                                             <button className="action-btn print" onClick={() => handlePrint(purchase)} title="طباعة">
                                                 <i className="fas fa-print"></i>
                                             </button>
-                                            <button className="action-btn delete" onClick={() => handleDelete(purchase.id)} title="حذف">
-                                                <i className="fas fa-trash"></i>
-                                            </button>
+                                            {canEdit && (
+                                                <button className="action-btn delete" onClick={() => handleDelete(purchase.id)} title="حذف">
+                                                    <i className="fas fa-trash"></i>
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -260,12 +314,12 @@ function Purchases() {
                 </table>
             </div>
 
-            {/* Create Purchase Modal */}
+            {/* Create/Edit Purchase Modal */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
                     <div className="modal-content" style={{ maxWidth: '800px' }} onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>عملية شراء جديدة</h3>
+                            <h3>{editingPurchase ? `تعديل فاتورة ${editingPurchase.invoice_no}` : 'عملية شراء جديدة'}</h3>
                             <button className="modal-close" onClick={() => setShowModal(false)}>&times;</button>
                         </div>
                         <form onSubmit={handleSubmit}>
@@ -325,11 +379,12 @@ function Purchases() {
 
                                 {purchaseItems.length > 0 && (
                                     <table style={{ marginBottom: '20px' }}>
-                                        <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th><th></th></tr></thead>
+                                        <thead><tr><th>الصنف</th><th>المورد</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th><th></th></tr></thead>
                                         <tbody>
                                             {purchaseItems.map((item, index) => (
                                                 <tr key={index}>
                                                     <td>{item.name}</td>
+                                                    <td>{item.supplier_name || <span className="text-muted">غير محدد</span>}</td>
                                                     <td>{item.quantity}</td>
                                                     <td>{formatCurrency(item.unit_price)}</td>
                                                     <td>{formatCurrency(item.total)}</td>
@@ -408,6 +463,7 @@ function Purchases() {
                                 <thead>
                                     <tr>
                                         <th>الصنف</th>
+                                        <th>المورد</th>
                                         <th>الكمية</th>
                                         <th>السعر</th>
                                         <th>الإجمالي</th>
@@ -417,6 +473,7 @@ function Purchases() {
                                     {selectedPurchase.items?.map((item, index) => (
                                         <tr key={index}>
                                             <td>{item.product_name}</td>
+                                            <td>{item.supplier_name || <span className="text-muted">غير محدد</span>}</td>
                                             <td>{item.quantity}</td>
                                             <td>{formatCurrency(item.unit_price)}</td>
                                             <td>{formatCurrency(item.total)}</td>

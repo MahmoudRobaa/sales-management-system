@@ -63,10 +63,12 @@ body {
     color: white;
     position: fixed;
     height: 100vh;
-    overflow-y: auto;
+    overflow-y: hidden;
     z-index: 1000;
     box-shadow: 4px 0 25px rgba(0, 0, 0, 0.15);
     backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
 }
 
 .sidebar::-webkit-scrollbar {
@@ -100,6 +102,8 @@ body {
 
 .menu {
     padding: 20px 12px;
+    flex: 1;
+    overflow-y: auto;
 }
 
 .menu-item {
@@ -132,6 +136,64 @@ body {
     font-size: 1.15rem;
     width: 24px;
     text-align: center;
+}
+
+/* ===== USER SECTION (Sidebar Bottom) ===== */
+.user-section {
+    padding: 16px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+}
+
+.user-info>i {
+    font-size: 2rem;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.user-info>div {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-weight: 600;
+    color: white;
+    font-size: 0.95rem;
+}
+
+.user-role {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.logout-btn {
+    width: 100%;
+    padding: 10px 16px;
+    background: rgba(244, 63, 94, 0.2);
+    border: 1px solid rgba(244, 63, 94, 0.4);
+    color: #fda4af;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    transition: all 0.3s;
+}
+
+.logout-btn:hover {
+    background: rgba(244, 63, 94, 0.4);
+    color: white;
 }
 
 /* ===== MAIN CONTENT ===== */

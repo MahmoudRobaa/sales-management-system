@@ -9,6 +9,28 @@ const api = axios.create({
     },
 });
 
+// Add auth token to requests if available
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
+// Handle 401 errors (expired token)
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.reload();
+        }
+        return Promise.reject(error);
+    }
+);
+
 // Categories API
 export const CategoriesAPI = {
     getAll: () => api.get('/categories').then(res => res.data),
@@ -63,6 +85,7 @@ export const SalesAPI = {
     getAll: () => api.get('/sales').then(res => res.data),
     getById: (id) => api.get(`/sales/${id}`).then(res => res.data),
     create: (data) => api.post('/sales', data).then(res => res.data),
+    update: (id, data) => api.put(`/sales/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/sales/${id}`).then(res => res.data),
 };
 
@@ -71,6 +94,7 @@ export const PurchasesAPI = {
     getAll: () => api.get('/purchases').then(res => res.data),
     getById: (id) => api.get(`/purchases/${id}`).then(res => res.data),
     create: (data) => api.post('/purchases', data).then(res => res.data),
+    update: (id, data) => api.put(`/purchases/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/purchases/${id}`).then(res => res.data),
 };
 
@@ -112,5 +136,13 @@ export const AnalyticsAPI = {
     getFinancialReports: (period = 'month') => api.get(`/analytics/financial-reports?period=${period}`).then(res => res.data),
 };
 
-export default api;
+// Cash Management API
+export const CashAPI = {
+    getBalance: () => api.get('/cash/balance').then(res => res.data),
+    getTransactions: (limit = 100) => api.get(`/cash/transactions?limit=${limit}`).then(res => res.data),
+    deposit: (amount, description) => api.post('/cash/deposit', { amount, description }).then(res => res.data),
+    withdraw: (amount, description) => api.post('/cash/withdraw', { amount, description }).then(res => res.data),
+    validate: (amount) => api.get(`/cash/validate?amount=${amount}`).then(res => res.data),
+};
 
+export default api;
