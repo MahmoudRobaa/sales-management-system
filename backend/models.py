@@ -238,21 +238,3 @@ class Setting(Base):
     value = Column(Text)
     description = Column(Text)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-class CashTransaction(Base):
-    """Track all cash/capital movements in the system"""
-    __tablename__ = "cash_transactions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    transaction_type = Column(String(50), nullable=False)  # deposit, withdrawal, sale_income, purchase_expense, sale_refund, purchase_refund
-    amount = Column(DECIMAL(15, 2), nullable=False)
-    balance_before = Column(DECIMAL(15, 2), nullable=False)
-    balance_after = Column(DECIMAL(15, 2), nullable=False)
-    reference_type = Column(String(50))  # sale, purchase, manual
-    reference_id = Column(Integer)
-    description = Column(Text)
-    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
-    created_at = Column(DateTime, server_default=func.now())
-
-    user = relationship("User")

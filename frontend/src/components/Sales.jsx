@@ -22,6 +22,11 @@ function Sales({ user }) {
     const [selectedProduct, setSelectedProduct] = useState('')
     const [quantity, setQuantity] = useState(1)
     const [unitPrice, setUnitPrice] = useState('')
+    
+    // Quick-add customer state
+    const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false)
+    const [quickCustomerForm, setQuickCustomerForm] = useState({ name: '', phone: '', address: '' })
+    const [savingQuickCustomer, setSavingQuickCustomer] = useState(false)
 
     // Check if user can edit (admin or manager)
     const canEdit = user && (user.role === 'admin' || user.role === 'manager')
@@ -206,6 +211,37 @@ function Sales({ user }) {
         }
     }
 
+    // Quick-add customer handler
+    const handleQuickAddCustomer = async (e) => {
+        e.preventDefault()
+        if (!quickCustomerForm.name.trim()) {
+            alert('يرجى إدخال اسم العميل')
+            return
+        }
+        setSavingQuickCustomer(true)
+        try {
+            // Get proper sequential code from backend
+            const code = await CustomersAPI.getNextCode()
+            const newCustomer = await CustomersAPI.create({
+                code: code,
+                name: quickCustomerForm.name,
+                phone: quickCustomerForm.phone || '',
+                address: quickCustomerForm.address || ''
+            })
+            // Refresh customers list and select the new customer
+            const customersData = await CustomersAPI.getAll()
+            setCustomers(customersData)
+            setFormData({ ...formData, customer_id: newCustomer.id.toString() })
+            setShowQuickAddCustomer(false)
+            setQuickCustomerForm({ name: '', phone: '', address: '' })
+        } catch (error) {
+            console.error('Error adding customer:', error)
+            alert(error.response?.data?.detail || 'خطأ في إضافة العميل')
+        } finally {
+            setSavingQuickCustomer(false)
+        }
+    }
+
     const getPaymentMethodIcon = (method) => {
         if (method === 'فيزا') return 'fa-credit-card'
         if (method === 'تحويل بنكي') return 'fa-university'
@@ -319,10 +355,15 @@ function Sales({ user }) {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label>العميل</label>
-                                        <select className="form-control" value={formData.customer_id} onChange={e => setFormData({ ...formData, customer_id: e.target.value })}>
-                                            <option value="">عميل نقدي</option>
-                                            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                        </select>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <select className="form-control" value={formData.customer_id} onChange={e => setFormData({ ...formData, customer_id: e.target.value })} style={{ flex: 1 }}>
+                                                <option value="">عميل نقدي</option>
+                                                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            </select>
+                                            <button type="button" className="btn btn-success" onClick={() => setShowQuickAddCustomer(true)} title="إضافة عميل جديد" style={{ padding: '8px 12px', minWidth: 'auto' }}>
+                                                <i className="fas fa-plus"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="form-group">
                                         <label>التاريخ</label>
@@ -515,6 +556,60 @@ function Sales({ user }) {
                                 <i className="fas fa-print"></i> طباعة
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick Add Customer Modal */}
+            {showQuickAddCustomer && (
+                <div className="modal-overlay" onClick={() => setShowQuickAddCustomer(false)} style={{ zIndex: 1100 }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header" style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
+                            <h3><i className="fas fa-user-plus"></i> إضافة عميل سريع</h3>
+                            <button className="modal-close" onClick={() => setShowQuickAddCustomer(false)}>&times;</button>
+                        </div>
+                        <form onSubmit={handleQuickAddCustomer}>
+                            <div className="modal-body">
+                                <div className="form-group">
+                                    <label>اسم العميل *</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={quickCustomerForm.name}
+                                        onChange={e => setQuickCustomerForm({ ...quickCustomerForm, name: e.target.value })}
+                                        placeholder="أدخل اسم العميل"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>رقم الهاتف</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={quickCustomerForm.phone}
+                                        onChange={e => setQuickCustomerForm({ ...quickCustomerForm, phone: e.target.value })}
+                                        placeholder="اختياري"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>العنوان</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={quickCustomerForm.address}
+                                        onChange={e => setQuickCustomerForm({ ...quickCustomerForm, address: e.target.value })}
+                                        placeholder="اختياري"
+                                    />
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn" onClick={() => setShowQuickAddCustomer(false)}>إلغاء</button>
+                                <button type="submit" className="btn btn-success" disabled={savingQuickCustomer}>
+                                    {savingQuickCustomer ? 'جاري الحفظ...' : 'إضافة'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

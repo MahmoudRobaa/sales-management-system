@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { ProductsAPI, CategoriesAPI, SuppliersAPI } from '../services/api'
+import { ProductsAPI, SuppliersAPI } from '../services/api'
 
 function Products() {
     const [products, setProducts] = useState([])
-    const [categories, setCategories] = useState([])
     const [suppliers, setSuppliers] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
@@ -15,7 +14,6 @@ function Products() {
     const [formData, setFormData] = useState({
         code: '',
         name: '',
-        category_id: '',
         supplier_id: '',
         purchase_price: '',
         sale_price: '',
@@ -31,13 +29,11 @@ function Products() {
     const loadData = async () => {
         try {
             setLoading(true)
-            const [productsData, categoriesData, suppliersData] = await Promise.all([
+            const [productsData, suppliersData] = await Promise.all([
                 ProductsAPI.getAll(),
-                CategoriesAPI.getAll(),
                 SuppliersAPI.getAll()
             ])
             setProducts(productsData)
-            setCategories(categoriesData)
             setSuppliers(suppliersData)
         } catch (error) {
             console.error('Error loading products:', error)
@@ -53,7 +49,6 @@ function Products() {
         setFormData({
             code: `PROD${String(products.length + 1).padStart(3, '0')}`,
             name: '',
-            category_id: '',
             supplier_id: '',
             purchase_price: '',
             sale_price: '',
@@ -71,7 +66,6 @@ function Products() {
             setFormData({
                 code: product.code,
                 name: product.name,
-                category_id: product.category_id || '',
                 supplier_id: product.supplier_id || '',
                 purchase_price: product.purchase_price,
                 sale_price: product.sale_price,
@@ -103,7 +97,6 @@ function Products() {
         try {
             const data = {
                 ...formData,
-                category_id: formData.category_id ? parseInt(formData.category_id) : null,
                 supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
                 purchase_price: parseFloat(formData.purchase_price),
                 sale_price: parseFloat(formData.sale_price),
@@ -214,7 +207,6 @@ function Products() {
                         <tr>
                             <th>كود الصنف</th>
                             <th>اسم الصنف</th>
-                            <th>الفئة</th>
                             <th>سعر الشراء</th>
                             <th>سعر البيع</th>
                             <th>الكمية</th>
@@ -227,7 +219,6 @@ function Products() {
                             <tr key={product.id}>
                                 <td>{product.code}</td>
                                 <td>{product.name}</td>
-                                <td>{product.category || '-'}</td>
                                 <td>{formatCurrency(product.purchase_price)}</td>
                                 <td>{formatCurrency(product.sale_price)}</td>
                                 <td>
@@ -285,33 +276,18 @@ function Products() {
                                     </div>
                                 </div>
 
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>الفئة</label>
-                                        <select
-                                            className="form-control"
-                                            value={formData.category_id}
-                                            onChange={e => setFormData({ ...formData, category_id: e.target.value })}
-                                        >
-                                            <option value="">اختر الفئة</option>
-                                            {categories.map(cat => (
-                                                <option key={cat.id} value={cat.id}>{cat.name_ar || cat.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label>المورد</label>
-                                        <select
-                                            className="form-control"
-                                            value={formData.supplier_id}
-                                            onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}
-                                        >
-                                            <option value="">اختر المورد</option>
-                                            {suppliers.map(sup => (
-                                                <option key={sup.id} value={sup.id}>{sup.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                                <div className="form-group">
+                                    <label>المورد</label>
+                                    <select
+                                        className="form-control"
+                                        value={formData.supplier_id}
+                                        onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}
+                                    >
+                                        <option value="">اختر المورد</option>
+                                        {suppliers.map(sup => (
+                                            <option key={sup.id} value={sup.id}>{sup.name}</option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 <div className="form-row">

@@ -22,6 +22,11 @@ function Purchases({ user }) {
     const [selectedProduct, setSelectedProduct] = useState('')
     const [quantity, setQuantity] = useState(1)
     const [unitPrice, setUnitPrice] = useState('')
+    
+    // Quick-add supplier state
+    const [showQuickAddSupplier, setShowQuickAddSupplier] = useState(false)
+    const [quickSupplierForm, setQuickSupplierForm] = useState({ name: '', phone: '', address: '' })
+    const [savingQuickSupplier, setSavingQuickSupplier] = useState(false)
 
     // Check if user can edit (admin or manager)
     const canEdit = user && (user.role === 'admin' || user.role === 'manager')
@@ -208,6 +213,37 @@ function Purchases({ user }) {
         }
     }
 
+    // Quick-add supplier handler
+    const handleQuickAddSupplier = async (e) => {
+        e.preventDefault()
+        if (!quickSupplierForm.name.trim()) {
+            alert('يرجى إدخال اسم المورد')
+            return
+        }
+        setSavingQuickSupplier(true)
+        try {
+            // Get proper sequential code from backend
+            const code = await SuppliersAPI.getNextCode()
+            const newSupplier = await SuppliersAPI.create({
+                code: code,
+                name: quickSupplierForm.name,
+                phone: quickSupplierForm.phone || '',
+                address: quickSupplierForm.address || ''
+            })
+            // Refresh suppliers list and select the new supplier
+            const suppliersData = await SuppliersAPI.getAll()
+            setSuppliers(suppliersData)
+            setFormData({ ...formData, supplier_id: newSupplier.id.toString() })
+            setShowQuickAddSupplier(false)
+            setQuickSupplierForm({ name: '', phone: '', address: '' })
+        } catch (error) {
+            console.error('Error adding supplier:', error)
+            alert(error.response?.data?.detail || 'خطأ في إضافة المورد')
+        } finally {
+            setSavingQuickSupplier(false)
+        }
+    }
+
     const getPaymentMethodIcon = (method) => {
         if (method === 'فيزا') return 'fa-credit-card'
         if (method === 'تحويل بنكي') return 'fa-university'
@@ -327,10 +363,15 @@ function Purchases({ user }) {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label>المورد</label>
-                                        <select className="form-control" value={formData.supplier_id} onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}>
-                                            <option value="">شراء نقدي (بدون مورد)</option>
-                                            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                        </select>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <select className="form-control" value={formData.supplier_id} onChange={e => setFormData({ ...formData, supplier_id: e.target.value })} style={{ flex: 1 }}>
+                                                <option value="">شراء نقدي (بدون مورد)</option>
+                                                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                            </select>
+                                            <button type="button" className="btn btn-success" onClick={() => setShowQuickAddSupplier(true)} title="إضافة مورد جديد" style={{ padding: '8px 12px', minWidth: 'auto' }}>
+                                                <i className="fas fa-plus"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="form-group">
                                         <label>التاريخ</label>
@@ -522,6 +563,60 @@ function Purchases({ user }) {
                                 <i className="fas fa-print"></i> طباعة
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick Add Supplier Modal */}
+            {showQuickAddSupplier && (
+                <div className="modal-overlay" onClick={() => setShowQuickAddSupplier(false)} style={{ zIndex: 1100 }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' }}>
+                            <h3><i className="fas fa-truck"></i> إضافة مورد سريع</h3>
+                            <button className="modal-close" onClick={() => setShowQuickAddSupplier(false)}>&times;</button>
+                        </div>
+                        <form onSubmit={handleQuickAddSupplier}>
+                            <div className="modal-body">
+                                <div className="form-group">
+                                    <label>اسم المورد *</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={quickSupplierForm.name}
+                                        onChange={e => setQuickSupplierForm({ ...quickSupplierForm, name: e.target.value })}
+                                        placeholder="أدخل اسم المورد"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>رقم الهاتف</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={quickSupplierForm.phone}
+                                        onChange={e => setQuickSupplierForm({ ...quickSupplierForm, phone: e.target.value })}
+                                        placeholder="اختياري"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>العنوان</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        value={quickSupplierForm.address}
+                                        onChange={e => setQuickSupplierForm({ ...quickSupplierForm, address: e.target.value })}
+                                        placeholder="اختياري"
+                                    />
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn" onClick={() => setShowQuickAddSupplier(false)}>إلغاء</button>
+                                <button type="submit" className="btn btn-primary" disabled={savingQuickSupplier}>
+                                    {savingQuickSupplier ? 'جاري الحفظ...' : 'إضافة'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

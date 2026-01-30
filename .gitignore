@@ -45,3 +45,8 @@ htmlcov/
 # Temporary files
 *.tmp
 *.temp
+
+# Migration files (dev only - schema.sql is the production source of truth)
+backend/migration*.sql
+backend/migrate*.py
+backend/reset_db.py

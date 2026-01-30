@@ -18,27 +18,43 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Handle 401 errors (expired token)
+// Handle 401 errors (expired token) and response errors
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        // Ensure response has data, even if empty
+        if (response.data === undefined || response.data === null || response.data === '') {
+            response.data = {};
+        }
+        return response;
+    },
     (error) => {
+        // Handle network errors
+        if (!error.response) {
+            console.error('Network error:', error.message);
+            return Promise.reject({
+                message: 'خطأ في الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.',
+                originalError: error
+            });
+        }
+        
+        // Handle 401 errors (expired token)
         if (error.response?.status === 401) {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             window.location.reload();
         }
+        
+        // Handle empty or invalid JSON responses
+        if (error.response?.data === undefined || error.response?.data === '') {
+            error.response.data = {
+                detail: 'حدث خطأ في الخادم',
+                status: error.response?.status
+            };
+        }
+        
         return Promise.reject(error);
     }
 );
-
-// Categories API
-export const CategoriesAPI = {
-    getAll: () => api.get('/categories').then(res => res.data),
-    getById: (id) => api.get(`/categories/${id}`).then(res => res.data),
-    create: (data) => api.post('/categories', data).then(res => res.data),
-    update: (id, data) => api.put(`/categories/${id}`, data).then(res => res.data),
-    delete: (id) => api.delete(`/categories/${id}`).then(res => res.data),
-};
 
 // Suppliers API
 export const SuppliersAPI = {
@@ -47,6 +63,7 @@ export const SuppliersAPI = {
     create: (data) => api.post('/suppliers', data).then(res => res.data),
     update: (id, data) => api.put(`/suppliers/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/suppliers/${id}`).then(res => res.data),
+    getNextCode: () => api.get('/suppliers/generate-code').then(res => res.data.code),
 };
 
 // Customers API
@@ -56,6 +73,7 @@ export const CustomersAPI = {
     create: (data) => api.post('/customers', data).then(res => res.data),
     update: (id, data) => api.put(`/customers/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/customers/${id}`).then(res => res.data),
+    getNextCode: () => api.get('/customers/generate-code').then(res => res.data.code),
 };
 
 // Products API
@@ -139,10 +157,10 @@ export const AnalyticsAPI = {
 // Cash Management API
 export const CashAPI = {
     getBalance: () => api.get('/cash/balance').then(res => res.data),
-    getTransactions: (limit = 100) => api.get(`/cash/transactions?limit=${limit}`).then(res => res.data),
-    deposit: (amount, description) => api.post('/cash/deposit', { amount, description }).then(res => res.data),
-    withdraw: (amount, description) => api.post('/cash/withdraw', { amount, description }).then(res => res.data),
-    validate: (amount) => api.get(`/cash/validate?amount=${amount}`).then(res => res.data),
+    getTransactions: (limit = 20) => api.get(`/cash/transactions?limit=${limit}`).then(res => res.data),
+    deposit: (amount, description = '') => api.post('/cash/deposit', { amount, description }).then(res => res.data),
+    withdraw: (amount, description = '') => api.post('/cash/withdraw', { amount, description }).then(res => res.data),
 };
 
 export default api;
+

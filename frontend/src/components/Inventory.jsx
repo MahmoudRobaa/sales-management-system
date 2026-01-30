@@ -5,6 +5,9 @@ function Inventory() {
     const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
+    const [showMovementsModal, setShowMovementsModal] = useState(false)
+    const [movements, setMovements] = useState([])
+    const [movementsLoading, setMovementsLoading] = useState(false)
     const [selectedProduct, setSelectedProduct] = useState(null)
     const [adjustmentData, setAdjustmentData] = useState({
         adjustment_type: 'add',
@@ -66,6 +69,37 @@ function Inventory() {
         }
     }
 
+    const loadMovements = async () => {
+        setMovementsLoading(true)
+        try {
+            const data = await InventoryAPI.getMovements()
+            setMovements(data)
+            setShowMovementsModal(true)
+        } catch (error) {
+            console.error('Error loading movements:', error)
+            alert('خطأ في تحميل سجل التعديلات')
+        } finally {
+            setMovementsLoading(false)
+        }
+    }
+
+    const formatDate = (dateStr) => {
+        if (!dateStr) return '-'
+        const date = new Date(dateStr)
+        return date.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+
+    const getMovementTypeLabel = (type) => {
+        const types = {
+            'purchase': 'شراء',
+            'sale': 'بيع',
+            'adjustment_add': 'إضافة يدوية',
+            'adjustment_subtract': 'خصم يدوي',
+            'adjustment_set': 'تعيين كمية'
+        }
+        return types[type] || type
+    }
+
     if (loading) {
         return <div className="loading"><div className="loading-spinner"></div><span>جاري التحميل...</span></div>
     }
@@ -74,6 +108,9 @@ function Inventory() {
         <>
             <div className="page-header">
                 <h1>المخازن</h1>
+                <button className="btn btn-secondary" onClick={loadMovements} disabled={movementsLoading}>
+                    <i className="fas fa-history"></i> {movementsLoading ? 'جاري التحميل...' : 'سجل التعديلات'}
+                </button>
             </div>
 
             <div className="card">
@@ -164,6 +201,62 @@ function Inventory() {
                                 <button type="submit" className="btn btn-primary">تطبيق التعديل</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Inventory Movements History Modal */}
+            {showMovementsModal && (
+                <div className="modal-overlay" onClick={() => setShowMovementsModal(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px' }}>
+                        <div className="modal-header" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)' }}>
+                            <h3><i className="fas fa-history"></i> سجل تعديلات المخزون</h3>
+                            <button className="modal-close" onClick={() => setShowMovementsModal(false)}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                            {movements.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                                    <i className="fas fa-inbox" style={{ fontSize: '3rem', marginBottom: '15px' }}></i>
+                                    <p>لا توجد تعديلات مسجلة</p>
+                                </div>
+                            ) : (
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>التاريخ</th>
+                                            <th>الصنف</th>
+                                            <th>نوع الحركة</th>
+                                            <th>الكمية قبل</th>
+                                            <th>التغيير</th>
+                                            <th>الكمية بعد</th>
+                                            <th>السبب</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {movements.slice(0, 50).map((movement, index) => (
+                                            <tr key={index}>
+                                                <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>{formatDate(movement.created_at)}</td>
+                                                <td>{movement.product_name || `#${movement.product_id}`}</td>
+                                                <td>
+                                                    <span className={`status-badge ${movement.quantity_change > 0 ? 'success' : 'warning'}`}>
+                                                        {getMovementTypeLabel(movement.movement_type)}
+                                                    </span>
+                                                </td>
+                                                <td>{movement.quantity_before}</td>
+                                                <td style={{ fontWeight: '600', color: movement.quantity_change > 0 ? '#10b981' : '#ef4444' }}>
+                                                    {movement.quantity_change > 0 ? '+' : ''}{movement.quantity_change}
+                                                </td>
+                                                <td>{movement.quantity_after}</td>
+                                                <td>{movement.reason || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn" onClick={() => setShowMovementsModal(false)}>إغلاق</button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -244,45 +244,6 @@ def get_activity_logs(
 
 
 # ============================================
-# CATEGORY ENDPOINTS
-# ============================================
-@app.get("/api/categories", response_model=List[schemas.CategoryResponse])
-def get_categories(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return crud.get_categories(db, skip=skip, limit=limit)
-
-
-@app.get("/api/categories/{category_id}", response_model=schemas.CategoryResponse)
-def get_category(category_id: int, db: Session = Depends(get_db)):
-    category = crud.get_category(db, category_id)
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-    return category
-
-
-@app.post("/api/categories", response_model=schemas.CategoryResponse)
-def create_category(category: schemas.CategoryCreate, db: Session = Depends(get_db)):
-    existing = crud.get_category_by_code(db, category.code)
-    if existing:
-        raise HTTPException(status_code=400, detail="Category code already exists")
-    return crud.create_category(db, category)
-
-
-@app.put("/api/categories/{category_id}", response_model=schemas.CategoryResponse)
-def update_category(category_id: int, category: schemas.CategoryUpdate, db: Session = Depends(get_db)):
-    updated = crud.update_category(db, category_id, category)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Category not found")
-    return updated
-
-
-@app.delete("/api/categories/{category_id}")
-def delete_category(category_id: int, db: Session = Depends(get_db)):
-    if not crud.delete_category(db, category_id):
-        raise HTTPException(status_code=404, detail="Category not found")
-    return {"message": "Category deleted successfully"}
-
-
-# ============================================
 # SUPPLIER ENDPOINTS
 # ============================================
 @app.get("/api/suppliers", response_model=List[schemas.SupplierResponse])
@@ -560,7 +521,13 @@ def create_sale(
     current_user: TokenData = Depends(get_current_user_optional)
 ):
     try:
-        result = crud.create_sale(db, sale, username=current_user.username if current_user else None)
+        # Get user_id from username
+        user_id = None
+        if current_user:
+            user = db.query(models.User).filter(models.User.username == current_user.username).first()
+            user_id = user.id if user else None
+        
+        result = crud.create_sale(db, sale, user_id=user_id)
         if current_user:
             log_activity(db, current_user, "create", "sale", result.id, f"فاتورة بيع #{result.id}")
         return result
@@ -577,7 +544,11 @@ def update_sale(
 ):
     """Update/Edit an existing sale (manager only) - adjusts inventory accordingly"""
     try:
-        result = crud.update_sale(db, sale_id, sale, username=current_user.username)
+        # Get user_id from username
+        user = db.query(models.User).filter(models.User.username == current_user.username).first()
+        user_id = user.id if user else None
+        
+        result = crud.update_sale(db, sale_id, sale, user_id=user_id)
         log_activity(db, current_user, "update", "sale", sale_id, f"تعديل فاتورة بيع #{sale_id}")
         return result
     except ValueError as e:
@@ -620,18 +591,15 @@ def create_purchase(
     current_user: TokenData = Depends(get_current_user_optional)
 ):
     try:
-        user_role = current_user.role if current_user else 'cashier'
-        result, warning = crud.create_purchase(
-            db, 
-            purchase, 
-            username=current_user.username if current_user else None,
-            user_role=user_role
-        )
+        # Get user_id from username
+        user_id = None
+        if current_user:
+            user = db.query(models.User).filter(models.User.username == current_user.username).first()
+            user_id = user.id if user else None
+        
+        result = crud.create_purchase(db, purchase, user_id=user_id)
         if current_user:
             log_activity(db, current_user, "create", "purchase", result.id, f"فاتورة شراء #{result.id}")
-        
-        # If there's a warning (admin with insufficient funds), we still return the purchase
-        # but the frontend should display the warning
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -646,7 +614,11 @@ def update_purchase(
 ):
     """Update/Edit an existing purchase (manager only) - adjusts inventory accordingly"""
     try:
-        result = crud.update_purchase(db, purchase_id, purchase, username=current_user.username)
+        # Get user_id from username
+        user = db.query(models.User).filter(models.User.username == current_user.username).first()
+        user_id = user.id if user else None
+        
+        result = crud.update_purchase(db, purchase_id, purchase, user_id=user_id)
         log_activity(db, current_user, "update", "purchase", purchase_id, f"تعديل فاتورة شراء #{purchase_id}")
         return result
     except ValueError as e:
@@ -878,120 +850,219 @@ def get_financial_reports(
 # CASH MANAGEMENT ENDPOINTS
 # ============================================
 @app.get("/api/cash/balance", response_model=schemas.CashBalanceResponse)
-def get_cash_balance(
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user_optional)
-):
-    """Get current cash balance"""
-    balance = crud.get_cash_balance(db)
+def get_cash_balance(db: Session = Depends(get_db)):
+    """Get current cash balance from cash_transactions"""
+    from sqlalchemy import text
     
-    # Get last transaction for timestamp
-    transactions = crud.get_cash_transactions(db, limit=1)
-    last_updated = transactions[0]['created_at'] if transactions else None
-    
-    return {"balance": balance, "last_updated": last_updated}
+    try:
+        result = db.execute(text("""
+            SELECT balance_after, created_at 
+            FROM cash_transactions 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)).fetchone()
+        
+        if result:
+            return {
+                "balance": float(result[0]),
+                "last_updated": result[1]
+            }
+        else:
+            # No transactions yet, return 0
+            return {"balance": 0.0, "last_updated": None}
+    except Exception as e:
+        # Table might not exist yet
+        return {"balance": 0.0, "last_updated": None}
 
 
 @app.get("/api/cash/transactions", response_model=List[schemas.CashTransactionResponse])
 def get_cash_transactions(
-    skip: int = 0,
-    limit: int = 100,
-    transaction_type: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(require_manager)
+    limit: int = Query(20, le=100),
+    db: Session = Depends(get_db)
 ):
-    """Get cash transaction history (manager+ only)"""
-    return crud.get_cash_transactions(db, skip=skip, limit=limit, transaction_type=transaction_type)
+    """Get cash transaction history"""
+    from sqlalchemy import text
+    
+    try:
+        result = db.execute(text("""
+            SELECT 
+                ct.id,
+                ct.transaction_type,
+                ct.amount,
+                ct.balance_before,
+                ct.balance_after,
+                ct.reference_type,
+                ct.reference_id,
+                ct.description,
+                ct.created_by,
+                u.full_name as created_by_name,
+                ct.created_at
+            FROM cash_transactions ct
+            LEFT JOIN users u ON ct.created_by = u.id
+            ORDER BY ct.created_at DESC
+            LIMIT :limit
+        """), {"limit": limit}).fetchall()
+        
+        transactions = []
+        for row in result:
+            transactions.append({
+                "id": row[0],
+                "transaction_type": row[1],
+                "amount": float(row[2]),
+                "balance_before": float(row[3]),
+                "balance_after": float(row[4]),
+                "reference_type": row[5],
+                "reference_id": row[6],
+                "description": row[7],
+                "created_by": row[8],
+                "created_by_name": row[9],
+                "created_at": row[10]
+            })
+        
+        return transactions
+    except Exception as e:
+        # Table might not exist
+        return []
 
 
 @app.post("/api/cash/deposit", response_model=schemas.CashTransactionResponse)
-def deposit_capital(
+def deposit_cash(
     deposit: schemas.CashDeposit,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(require_admin)
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Deposit capital into the cash register (admin only)"""
+    """Deposit cash/capital"""
+    from sqlalchemy import text
+    
     try:
+        # Get current balance
+        balance_result = db.execute(text("""
+            SELECT balance_after 
+            FROM cash_transactions 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)).fetchone()
+        
+        balance_before = float(balance_result[0]) if balance_result else 0.0
+        balance_after = balance_before + float(deposit.amount)
+        
         # Get user ID
         user = db.query(models.User).filter(models.User.username == current_user.username).first()
         user_id = user.id if user else None
         
-        result = crud.deposit_capital(
-            db, 
-            amount=deposit.amount, 
-            description=deposit.description,
-            user_id=user_id
-        )
+        # Insert transaction
+        result = db.execute(text("""
+            INSERT INTO cash_transactions 
+            (transaction_type, amount, balance_before, balance_after, description, created_by, created_at)
+            VALUES (:type, :amount, :balance_before, :balance_after, :description, :created_by, NOW())
+            RETURNING id, transaction_type, amount, balance_before, balance_after, 
+                      reference_type, reference_id, description, created_by, created_at
+        """), {
+            "type": "deposit",
+            "amount": float(deposit.amount),
+            "balance_before": balance_before,
+            "balance_after": balance_after,
+            "description": deposit.description or "إضافة رأس مال",
+            "created_by": user_id
+        })
         
-        log_activity(db, current_user, "create", "cash", result.id, f"إضافة رأس مال: {deposit.amount}")
+        db.commit()
+        row = result.fetchone()
         
-        # Return with user name
+        # Log activity
+        log_activity(db, current_user, "deposit", "cash", None, None, f"إيداع {deposit.amount} EGP")
+        
         return {
-            "id": result.id,
-            "transaction_type": result.transaction_type,
-            "amount": result.amount,
-            "balance_before": result.balance_before,
-            "balance_after": result.balance_after,
-            "reference_type": result.reference_type,
-            "reference_id": result.reference_id,
-            "description": result.description,
-            "created_by": result.created_by,
+            "id": row[0],
+            "transaction_type": row[1],
+            "amount": float(row[2]),
+            "balance_before": float(row[3]),
+            "balance_after": float(row[4]),
+            "reference_type": row[5],
+            "reference_id": row[6],
+            "description": row[7],
+            "created_by": row[8],
             "created_by_name": user.full_name if user else None,
-            "created_at": result.created_at
+            "created_at": row[9]
         }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"فشل في إيداع المبلغ: {str(e)}")
 
 
 @app.post("/api/cash/withdraw", response_model=schemas.CashTransactionResponse)
-def withdraw_capital(
-    withdraw: schemas.CashWithdraw,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(require_admin)
+def withdraw_cash(
+    withdrawal: schemas.CashWithdraw,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Withdraw capital from the cash register (admin only)"""
+    """Withdraw cash/capital"""
+    from sqlalchemy import text
+    
     try:
+        # Get current balance
+        balance_result = db.execute(text("""
+            SELECT balance_after 
+            FROM cash_transactions 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)).fetchone()
+        
+        balance_before = float(balance_result[0]) if balance_result else 0.0
+        
+        # Check sufficient funds
+        if balance_before < float(withdrawal.amount):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"الرصيد غير كافٍ. الرصيد المتاح: {balance_before} EGP"
+            )
+        
+        balance_after = balance_before - float(withdrawal.amount)
+        
         # Get user ID
         user = db.query(models.User).filter(models.User.username == current_user.username).first()
         user_id = user.id if user else None
         
-        result = crud.withdraw_capital(
-            db, 
-            amount=withdraw.amount, 
-            description=withdraw.description,
-            user_id=user_id
-        )
+        # Insert transaction
+        result = db.execute(text("""
+            INSERT INTO cash_transactions 
+            (transaction_type, amount, balance_before, balance_after, description, created_by, created_at)
+            VALUES (:type, :amount, :balance_before, :balance_after, :description, :created_by, NOW())
+            RETURNING id, transaction_type, amount, balance_before, balance_after, 
+                      reference_type, reference_id, description, created_by, created_at
+        """), {
+            "type": "withdraw",
+            "amount": float(withdrawal.amount),
+            "balance_before": balance_before,
+            "balance_after": balance_after,
+            "description": withdrawal.description or "سحب رأس مال",
+            "created_by": user_id
+        })
         
-        log_activity(db, current_user, "create", "cash", result.id, f"سحب رأس مال: {withdraw.amount}")
+        db.commit()
+        row = result.fetchone()
+        
+        # Log activity
+        log_activity(db, current_user, "withdraw", "cash", None, None, f"سحب {withdrawal.amount} EGP")
         
         return {
-            "id": result.id,
-            "transaction_type": result.transaction_type,
-            "amount": result.amount,
-            "balance_before": result.balance_before,
-            "balance_after": result.balance_after,
-            "reference_type": result.reference_type,
-            "reference_id": result.reference_id,
-            "description": result.description,
-            "created_by": result.created_by,
+            "id": row[0],
+            "transaction_type": row[1],
+            "amount": float(row[2]),
+            "balance_before": float(row[3]),
+            "balance_after": float(row[4]),
+            "reference_type": row[5],
+            "reference_id": row[6],
+            "description": row[7],
+            "created_by": row[8],
             "created_by_name": user.full_name if user else None,
-            "created_at": result.created_at
+            "created_at": row[9]
         }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/cash/validate")
-def validate_cash_for_purchase(
-    amount: float,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user_optional)
-):
-    """Validate if cash is sufficient for a purchase amount"""
-    from decimal import Decimal
-    user_role = current_user.role if current_user else 'cashier'
-    result = crud.validate_cash_for_purchase(db, Decimal(str(amount)), user_role)
-    return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"فشل في سحب المبلغ: {str(e)}")
 
 
 # ============================================

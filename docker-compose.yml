@@ -1,40 +1,89 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: sales_db
+    container_name: sales_db_dev
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-salesadmin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salespass123}
-      POSTGRES_DB: ${POSTGRES_DB:-sales_management}
+      POSTGRES_USER: salesadmin
+      POSTGRES_PASSWORD: salespass123
+      POSTGRES_DB: sales_management
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
       - ./database/seed_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salesadmin} -d ${POSTGRES_DB:-sales_management}"]
+      test: ["CMD-SHELL", "pg_isready -U salesadmin -d sales_management"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - sales_network
 
+  # FastAPI Backend (Development mode with hot reload)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sales_backend_dev
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://salesadmin:salespass123@postgres:5432/sales_management
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sales_network
+
+  # React Frontend (Development mode with hot reload)
+  frontend:
+    image: node:20-alpine
+    container_name: sales_frontend_dev
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+    networks:
+      - sales_network
+
+  # PgAdmin (Optional - for database management)
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: sales_pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
     ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      - "5050:80"
     depends_on:
       - postgres
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - sales_network
 
 volumes:
   postgres_data:
   pgadmin_data:
+
+networks:
+  sales_network:
+    driver: bridge

@@ -63,19 +63,21 @@ body {
     color: white;
     position: fixed;
     height: 100vh;
-    overflow-y: hidden;
     z-index: 1000;
     box-shadow: 4px 0 25px rgba(0, 0, 0, 0.15);
     backdrop-filter: blur(10px);
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
-.sidebar::-webkit-scrollbar {
+.sidebar::-webkit-scrollbar,
+.menu::-webkit-scrollbar {
     width: 4px;
 }
 
-.sidebar::-webkit-scrollbar-thumb {
+.sidebar::-webkit-scrollbar-thumb,
+.menu::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
     border-radius: 10px;
 }
@@ -85,6 +87,7 @@ body {
     text-align: center;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
 }
 
 .logo h2 {
@@ -104,6 +107,7 @@ body {
     padding: 20px 12px;
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .menu-item {
@@ -154,12 +158,12 @@ body {
     margin-bottom: 10px;
 }
 
-.user-info>i {
+.user-info > i {
     font-size: 2rem;
     color: rgba(255, 255, 255, 0.8);
 }
 
-.user-info>div {
+.user-info > div {
     display: flex;
     flex-direction: column;
 }

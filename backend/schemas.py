@@ -315,6 +315,7 @@ class InventoryAdjustment(BaseModel):
 class InventoryMovementResponse(BaseModel):
     id: int
     product_id: int
+    product_name: Optional[str] = None
     movement_type: str
     quantity_before: int
     quantity_change: int
