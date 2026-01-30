@@ -87,14 +87,6 @@ const Login = ({ onLogin }) => {
             {loading ? 'جاري التحميل...' : 'تسجيل الدخول'}
           </button>
         </form>
-        
-        <div className="login-footer">
-          <p>المستخدمين الافتراضيين للاختبار:</p>
-          <ul>
-            <li><strong>admin</strong> / admin123 (مدير)</li>
-            <li><strong>cashier</strong> / cashier123 (كاشير)</li>
-          </ul>
-        </div>
       </div>
       
       <style>{`
@@ -190,25 +182,6 @@ const Login = ({ onLogin }) => {
           border-radius: 8px;
           text-align: center;
           border: 1px solid #fcc;
-        }
-        
-        .login-footer {
-          margin-top: 30px;
-          padding-top: 20px;
-          border-top: 1px solid #eee;
-          text-align: center;
-          color: #666;
-          font-size: 0.85rem;
-        }
-        
-        .login-footer ul {
-          list-style: none;
-          padding: 0;
-          margin: 10px 0 0 0;
-        }
-        
-        .login-footer li {
-          margin: 5px 0;
         }
       `}</style>
     </div>
