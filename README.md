@@ -66,9 +66,9 @@ cp .env.example .env
 # قم بتعديل كلمات المرور في ملف .env
 ```
 
-### 3. تشغيل النظام (Production)
+### 3. تشغيل النظام
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 ```
 
 ### 4. الوصول للنظام
@@ -83,16 +83,15 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ## 🔧 بيئة التطوير | Development
 
-### تشغيل بيئة التطوير
-```bash
-# Windows
-start-sales-system-dev.bat
+## 🔧 بيئة التطوير | Development
 
-# أو باستخدام Docker Compose
+للتطوير، استخدم فرع `dev`:
+```bash
+git checkout dev
 docker-compose up -d
 ```
 
-هذا يشغل:
+يتضمن فرع التطوير:
 - Frontend مع Hot Reload على المنفذ 5173
 - Backend مع Auto Reload على المنفذ 8000
 - PostgreSQL على المنفذ 5432
