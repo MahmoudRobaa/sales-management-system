@@ -42,6 +42,10 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Test artifacts
+*.db
+.pytest_cache/
+
 # Temporary files
 *.tmp
 *.temp

@@ -13,19 +13,19 @@ import schemas
 # ============================================
 # CATEGORY CRUD
 # ============================================
-def get_categories(db: Session, skip: int = 0, limit: int = 100):
+def get_categories(db: Session, skip: int = 0, limit: int = 100) -> list[models.Category]:
     return db.query(models.Category).offset(skip).limit(limit).all()
 
 
-def get_category(db: Session, category_id: int):
+def get_category(db: Session, category_id: int) -> Optional[models.Category]:
     return db.query(models.Category).filter(models.Category.id == category_id).first()
 
 
-def get_category_by_code(db: Session, code: str):
+def get_category_by_code(db: Session, code: str) -> Optional[models.Category]:
     return db.query(models.Category).filter(models.Category.code == code).first()
 
 
-def create_category(db: Session, category: schemas.CategoryCreate):
+def create_category(db: Session, category: schemas.CategoryCreate) -> models.Category:
     db_category = models.Category(**category.model_dump())
     db.add(db_category)
     db.commit()
@@ -33,7 +33,7 @@ def create_category(db: Session, category: schemas.CategoryCreate):
     return db_category
 
 
-def update_category(db: Session, category_id: int, category: schemas.CategoryUpdate):
+def update_category(db: Session, category_id: int, category: schemas.CategoryUpdate) -> Optional[models.Category]:
     db_category = get_category(db, category_id)
     if db_category:
         update_data = category.model_dump(exclude_unset=True)
@@ -44,7 +44,7 @@ def update_category(db: Session, category_id: int, category: schemas.CategoryUpd
     return db_category
 
 
-def delete_category(db: Session, category_id: int):
+def delete_category(db: Session, category_id: int) -> bool:
     db_category = get_category(db, category_id)
     if db_category:
         db.delete(db_category)
@@ -56,19 +56,19 @@ def delete_category(db: Session, category_id: int):
 # ============================================
 # SUPPLIER CRUD
 # ============================================
-def get_suppliers(db: Session, skip: int = 0, limit: int = 100):
+def get_suppliers(db: Session, skip: int = 0, limit: int = 100) -> list[models.Supplier]:
     return db.query(models.Supplier).offset(skip).limit(limit).all()
 
 
-def get_supplier(db: Session, supplier_id: int):
+def get_supplier(db: Session, supplier_id: int) -> Optional[models.Supplier]:
     return db.query(models.Supplier).filter(models.Supplier.id == supplier_id).first()
 
 
-def get_supplier_by_code(db: Session, code: str):
+def get_supplier_by_code(db: Session, code: str) -> Optional[models.Supplier]:
     return db.query(models.Supplier).filter(models.Supplier.code == code).first()
 
 
-def create_supplier(db: Session, supplier: schemas.SupplierCreate):
+def create_supplier(db: Session, supplier: schemas.SupplierCreate) -> models.Supplier:
     db_supplier = models.Supplier(**supplier.model_dump())
     db.add(db_supplier)
     db.commit()
@@ -76,7 +76,7 @@ def create_supplier(db: Session, supplier: schemas.SupplierCreate):
     return db_supplier
 
 
-def update_supplier(db: Session, supplier_id: int, supplier: schemas.SupplierUpdate):
+def update_supplier(db: Session, supplier_id: int, supplier: schemas.SupplierUpdate) -> Optional[models.Supplier]:
     db_supplier = get_supplier(db, supplier_id)
     if db_supplier:
         update_data = supplier.model_dump(exclude_unset=True)
@@ -87,7 +87,7 @@ def update_supplier(db: Session, supplier_id: int, supplier: schemas.SupplierUpd
     return db_supplier
 
 
-def delete_supplier(db: Session, supplier_id: int):
+def delete_supplier(db: Session, supplier_id: int) -> bool:
     db_supplier = get_supplier(db, supplier_id)
     if db_supplier:
         db.delete(db_supplier)
@@ -105,19 +105,19 @@ def generate_supplier_code(db: Session) -> str:
 # ============================================
 # CUSTOMER CRUD
 # ============================================
-def get_customers(db: Session, skip: int = 0, limit: int = 100):
+def get_customers(db: Session, skip: int = 0, limit: int = 100) -> list[models.Customer]:
     return db.query(models.Customer).offset(skip).limit(limit).all()
 
 
-def get_customer(db: Session, customer_id: int):
+def get_customer(db: Session, customer_id: int) -> Optional[models.Customer]:
     return db.query(models.Customer).filter(models.Customer.id == customer_id).first()
 
 
-def get_customer_by_code(db: Session, code: str):
+def get_customer_by_code(db: Session, code: str) -> Optional[models.Customer]:
     return db.query(models.Customer).filter(models.Customer.code == code).first()
 
 
-def create_customer(db: Session, customer: schemas.CustomerCreate):
+def create_customer(db: Session, customer: schemas.CustomerCreate) -> models.Customer:
     db_customer = models.Customer(**customer.model_dump())
     db.add(db_customer)
     db.commit()
@@ -125,7 +125,7 @@ def create_customer(db: Session, customer: schemas.CustomerCreate):
     return db_customer
 
 
-def update_customer(db: Session, customer_id: int, customer: schemas.CustomerUpdate):
+def update_customer(db: Session, customer_id: int, customer: schemas.CustomerUpdate) -> Optional[models.Customer]:
     db_customer = get_customer(db, customer_id)
     if db_customer:
         update_data = customer.model_dump(exclude_unset=True)
@@ -136,7 +136,7 @@ def update_customer(db: Session, customer_id: int, customer: schemas.CustomerUpd
     return db_customer
 
 
-def delete_customer(db: Session, customer_id: int):
+def delete_customer(db: Session, customer_id: int) -> bool:
     db_customer = get_customer(db, customer_id)
     if db_customer:
         db.delete(db_customer)
@@ -154,22 +154,22 @@ def generate_customer_code(db: Session) -> str:
 # ============================================
 # PRODUCT CRUD
 # ============================================
-def get_products(db: Session, skip: int = 0, limit: int = 100, category: str = None):
+def get_products(db: Session, skip: int = 0, limit: int = 100, category: str = None) -> list[models.Product]:
     query = db.query(models.Product)
     if category and category != 'all':
         query = query.join(models.Category).filter(models.Category.code == category)
     return query.offset(skip).limit(limit).all()
 
 
-def get_product(db: Session, product_id: int):
+def get_product(db: Session, product_id: int) -> Optional[models.Product]:
     return db.query(models.Product).filter(models.Product.id == product_id).first()
 
 
-def get_product_by_code(db: Session, code: str):
+def get_product_by_code(db: Session, code: str) -> Optional[models.Product]:
     return db.query(models.Product).filter(models.Product.code == code).first()
 
 
-def create_product(db: Session, product: schemas.ProductCreate):
+def create_product(db: Session, product: schemas.ProductCreate) -> models.Product:
     # Force quantity to 0 - stock only comes from purchases
     product_data = product.model_dump()
     product_data['quantity'] = 0
@@ -180,7 +180,7 @@ def create_product(db: Session, product: schemas.ProductCreate):
     return db_product
 
 
-def update_product(db: Session, product_id: int, product: schemas.ProductUpdate):
+def update_product(db: Session, product_id: int, product: schemas.ProductUpdate) -> Optional[models.Product]:
     db_product = get_product(db, product_id)
     if db_product:
         update_data = product.model_dump(exclude_unset=True)
@@ -194,7 +194,7 @@ def update_product(db: Session, product_id: int, product: schemas.ProductUpdate)
     return db_product
 
 
-def delete_product(db: Session, product_id: int):
+def delete_product(db: Session, product_id: int) -> bool:
     db_product = get_product(db, product_id)
     if db_product:
         db.delete(db_product)
@@ -209,7 +209,7 @@ def generate_product_code(db: Session) -> str:
     return f"PROD{str(max_id + 1).zfill(3)}"
 
 
-def get_products_with_details(db: Session, skip: int = 0, limit: int = 100, category: str = None):
+def get_products_with_details(db: Session, skip: int = 0, limit: int = 100, category: str = None) -> list[dict]:
     """Get products with category and supplier names"""
     query = db.query(models.Product)
     if category and category != 'all':
@@ -239,11 +239,11 @@ def get_products_with_details(db: Session, skip: int = 0, limit: int = 100, cate
 # ============================================
 # SALE CRUD
 # ============================================
-def get_sales(db: Session, skip: int = 0, limit: int = 100):
+def get_sales(db: Session, skip: int = 0, limit: int = 100) -> list[models.Sale]:
     return db.query(models.Sale).order_by(models.Sale.id.desc()).offset(skip).limit(limit).all()
 
 
-def get_sale(db: Session, sale_id: int):
+def get_sale(db: Session, sale_id: int) -> Optional[models.Sale]:
     return db.query(models.Sale).filter(models.Sale.id == sale_id).first()
 
 
@@ -252,7 +252,7 @@ def generate_invoice_no(db: Session) -> str:
     return f"INV{str(count + 1).zfill(3)}"
 
 
-def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None):
+def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None) -> models.Sale:
     # Generate invoice number
     invoice_no = generate_invoice_no(db)
     
@@ -378,7 +378,7 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None):
     return db_sale
 
 
-def delete_sale(db: Session, sale_id: int):
+def delete_sale(db: Session, sale_id: int) -> bool:
     db_sale = get_sale(db, sale_id)
     if db_sale:
         # Restore product quantities
@@ -415,7 +415,7 @@ def delete_sale(db: Session, sale_id: int):
     return False
 
 
-def update_sale(db: Session, sale_id: int, sale: schemas.SaleCreate, user_id: int = None):
+def update_sale(db: Session, sale_id: int, sale: schemas.SaleCreate, user_id: int = None) -> models.Sale:
     """Update an existing sale - reverses old inventory and applies new"""
     db_sale = get_sale(db, sale_id)
     if not db_sale:
@@ -538,11 +538,11 @@ def update_sale(db: Session, sale_id: int, sale: schemas.SaleCreate, user_id: in
 # ============================================
 # PURCHASE CRUD
 # ============================================
-def get_purchases(db: Session, skip: int = 0, limit: int = 100):
+def get_purchases(db: Session, skip: int = 0, limit: int = 100) -> list[models.Purchase]:
     return db.query(models.Purchase).order_by(models.Purchase.id.desc()).offset(skip).limit(limit).all()
 
 
-def get_purchase(db: Session, purchase_id: int):
+def get_purchase(db: Session, purchase_id: int) -> Optional[models.Purchase]:
     return db.query(models.Purchase).filter(models.Purchase.id == purchase_id).first()
 
 
@@ -551,7 +551,7 @@ def generate_purchase_invoice_no(db: Session) -> str:
     return f"PUR{str(count + 1).zfill(3)}"
 
 
-def create_purchase(db: Session, purchase: schemas.PurchaseCreate, user_id: int = None):
+def create_purchase(db: Session, purchase: schemas.PurchaseCreate, user_id: int = None) -> models.Purchase:
     invoice_no = generate_purchase_invoice_no(db)
     
     supplier_name = purchase.supplier_name
@@ -676,7 +676,7 @@ def create_purchase(db: Session, purchase: schemas.PurchaseCreate, user_id: int 
     return db_purchase
 
 
-def delete_purchase(db: Session, purchase_id: int):
+def delete_purchase(db: Session, purchase_id: int) -> bool:
     db_purchase = get_purchase(db, purchase_id)
     if db_purchase:
         # Validate stock before deleting
@@ -718,7 +718,7 @@ def delete_purchase(db: Session, purchase_id: int):
     return False
 
 
-def update_purchase(db: Session, purchase_id: int, purchase: schemas.PurchaseCreate, user_id: int = None):
+def update_purchase(db: Session, purchase_id: int, purchase: schemas.PurchaseCreate, user_id: int = None) -> models.Purchase:
     """Update an existing purchase - reverses old inventory and applies new"""
     db_purchase = get_purchase(db, purchase_id)
     if not db_purchase:
@@ -848,7 +848,7 @@ def update_purchase(db: Session, purchase_id: int, purchase: schemas.PurchaseCre
 # ============================================
 # INVENTORY CRUD
 # ============================================
-def get_inventory_movements(db: Session, product_id: int = None, skip: int = 0, limit: int = 100):
+def get_inventory_movements(db: Session, product_id: int = None, skip: int = 0, limit: int = 100) -> list[dict]:
     query = db.query(models.InventoryMovement)
     if product_id:
         query = query.filter(models.InventoryMovement.product_id == product_id)
@@ -876,7 +876,7 @@ def get_inventory_movements(db: Session, product_id: int = None, skip: int = 0, 
     return result
 
 
-def adjust_inventory(db: Session, adjustment: schemas.InventoryAdjustment):
+def adjust_inventory(db: Session, adjustment: schemas.InventoryAdjustment) -> models.InventoryMovement:
     product = get_product(db, adjustment.product_id)
     if not product:
         raise ValueError(f"Product {adjustment.product_id} not found")
@@ -915,15 +915,15 @@ def adjust_inventory(db: Session, adjustment: schemas.InventoryAdjustment):
 # ============================================
 # SETTINGS CRUD
 # ============================================
-def get_settings(db: Session):
+def get_settings(db: Session) -> list[models.Setting]:
     return db.query(models.Setting).all()
 
 
-def get_setting(db: Session, key: str):
+def get_setting(db: Session, key: str) -> Optional[models.Setting]:
     return db.query(models.Setting).filter(models.Setting.key == key).first()
 
 
-def update_settings(db: Session, settings: List[schemas.SettingUpdate]):
+def update_settings(db: Session, settings: List[schemas.SettingUpdate]) -> list[models.Setting]:
     for setting in settings:
         db_setting = get_setting(db, setting.key)
         if db_setting:
@@ -938,7 +938,7 @@ def update_settings(db: Session, settings: List[schemas.SettingUpdate]):
 # ============================================
 # DASHBOARD & REPORTS
 # ============================================
-def get_dashboard_stats(db: Session):
+def get_dashboard_stats(db: Session) -> schemas.DashboardStats:
     total_sales = db.query(func.coalesce(func.sum(models.Sale.total), 0)).scalar()
     total_products = db.query(models.Product).count()
     total_customers = db.query(models.Customer).count()
@@ -970,7 +970,7 @@ def get_dashboard_stats(db: Session):
     )
 
 
-def get_low_stock_products(db: Session):
+def get_low_stock_products(db: Session) -> list[schemas.LowStockProduct]:
     products = db.query(models.Product).filter(
         models.Product.quantity <= models.Product.min_quantity
     ).all()
@@ -995,7 +995,7 @@ def get_low_stock_products(db: Session):
     return result
 
 
-def get_profit_report(db: Session, from_date: date = None, to_date: date = None):
+def get_profit_report(db: Session, from_date: date = None, to_date: date = None) -> schemas.ProfitReport:
     query = db.query(models.Sale)
     if from_date:
         query = query.filter(models.Sale.sale_date >= from_date)
@@ -1034,7 +1034,7 @@ def get_profit_report(db: Session, from_date: date = None, to_date: date = None)
 # ============================================
 # ANALYTICS FUNCTIONS
 # ============================================
-def get_sales_trend(db: Session, period: str = 'daily', days: int = 30):
+def get_sales_trend(db: Session, period: str = 'daily', days: int = 30) -> schemas.SalesTrendReport:
     """Get sales trend data for charting"""
     from datetime import timedelta
     
@@ -1087,7 +1087,7 @@ def get_sales_trend(db: Session, period: str = 'daily', days: int = 30):
     return schemas.SalesTrendReport(data=result, period=period)
 
 
-def get_top_products(db: Session, limit: int = 10):
+def get_top_products(db: Session, limit: int = 10) -> list[schemas.TopProductItem]:
     """Get top selling products by revenue"""
     # Aggregate sale items
     from sqlalchemy import desc
@@ -1124,7 +1124,7 @@ def get_top_products(db: Session, limit: int = 10):
     ) for p in sorted_products]
 
 
-def get_inventory_value(db: Session):
+def get_inventory_value(db: Session) -> schemas.InventoryValueReport:
     """Calculate total inventory value and stock health"""
     products = db.query(models.Product).all()
     
@@ -1159,7 +1159,7 @@ def get_inventory_value(db: Session):
     )
 
 
-def get_business_kpis(db: Session):
+def get_business_kpis(db: Session) -> schemas.BusinessKPIs:
     """Calculate comprehensive business KPIs"""
     from datetime import timedelta
     
@@ -1236,7 +1236,7 @@ def get_business_kpis(db: Session):
     )
 
 
-def get_top_customers(db: Session, limit: int = 10):
+def get_top_customers(db: Session, limit: int = 10) -> list[schemas.CustomerAnalyticsItem]:
     """Get top customers by purchase amount"""
     customers = db.query(models.Customer).order_by(models.Customer.total_purchases.desc()).limit(limit).all()
     
