@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { DashboardAPI, ProductsAPI, CustomersAPI, SuppliersAPI, SalesAPI, PurchasesAPI, SettingsAPI } from './services/api'
+import { Sidebar, Navbar, MobileNav } from './components/layout'
+import { ToastProvider } from './components/ui/Toast'
 import Dashboard from './components/Dashboard'
 import Products from './components/Products'
 import Customers from './components/Customers'
@@ -15,11 +16,14 @@ import Returns from './components/Returns'
 import ShiftManagement from './components/ShiftManagement'
 import AdvancedReports from './components/AdvancedReports'
 import StocktakeComponent from './components/Stocktake'
+import './styles/tokens.css'
+import './styles/typography.css'
+import './styles/globals.css'
 import './index.css'
 
 function App() {
   const [activeSection, setActiveSection] = useState('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [user, setUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -78,6 +82,9 @@ function App() {
     menuItems.push({ id: 'users', icon: 'fas fa-user-shield', label: 'إدارة المستخدمين' })
   }
 
+  // Section labels for navbar
+  const sectionLabels = Object.fromEntries(menuItems.map(m => [m.id, m.label]))
+
   const renderSection = () => {
     switch (activeSection) {
       case 'dashboard': return <Dashboard />
@@ -101,65 +108,54 @@ function App() {
   // Show loading spinner while checking auth
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div className="spinner"></div>
+      <div className="ui-loading-screen">
+        <div className="ui-loading-spinner" />
       </div>
     )
   }
 
   // Show login if not authenticated
   if (!user) {
-    return <Login onLogin={handleLogin} />
+    return (
+      <ToastProvider>
+        <Login onLogin={handleLogin} />
+      </ToastProvider>
+    )
   }
 
   return (
-    <div className="app-container">
-      {/* Sidebar */}
-      <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="logo">
-          <h2>نظام إدارة المبيعات</h2>
-          <p>محل الحاسوب والأدوات الكهربائية</p>
-        </div>
+    <ToastProvider>
+      <div className="app-layout">
+        {/* Sidebar — desktop */}
+        <Sidebar
+          menuItems={menuItems}
+          activeSection={activeSection}
+          onNavigate={setActiveSection}
+          user={user}
+          onLogout={handleLogout}
+        />
 
-        <div className="menu">
-          {menuItems.map(item => (
-            <div
-              key={item.id}
-              className={`menu-item ${activeSection === item.id ? 'active' : ''}`}
-              onClick={() => {
-                setActiveSection(item.id)
-                setSidebarOpen(false)
-              }}
-            >
-              <i className={item.icon}></i>
-              <span>{item.label}</span>
-            </div>
-          ))}
-        </div>
+        {/* Mobile nav overlay */}
+        <MobileNav
+          open={mobileNavOpen}
+          menuItems={menuItems}
+          activeSection={activeSection}
+          onNavigate={setActiveSection}
+          onClose={() => setMobileNavOpen(false)}
+        />
 
-        {/* User Info & Logout */}
-        <div className="user-section">
-          <div className="user-info">
-            <i className="fas fa-user-circle"></i>
-            <div>
-              <span className="user-name">{user.full_name}</span>
-              <span className="user-role">
-                {user.role === 'admin' ? 'مدير' : user.role === 'manager' ? 'مشرف' : 'كاشير'}
-              </span>
-            </div>
-          </div>
-          <button className="logout-btn" onClick={handleLogout}>
-            <i className="fas fa-sign-out-alt"></i>
-            تسجيل الخروج
-          </button>
+        {/* Main area */}
+        <div className="app-main">
+          <Navbar
+            title={sectionLabels[activeSection] || 'لوحة التحكم'}
+            onToggleMobile={() => setMobileNavOpen(true)}
+          />
+          <main className="app-content">
+            {renderSection()}
+          </main>
         </div>
       </div>
-
-      {/* Main Content */}
-      <div className="main-content">
-        {renderSection()}
-      </div>
-    </div>
+    </ToastProvider>
   )
 }
 

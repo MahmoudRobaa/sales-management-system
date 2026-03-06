@@ -1,0 +1,54 @@
+/* =============================================
+   TYPOGRAPHY — Cairo Arabic-first type scale
+   ============================================= */
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
+h1 { font-size: var(--font-size-3xl); }
+h2 { font-size: var(--font-size-2xl); }
+h3 { font-size: var(--font-size-xl); }
+h4 { font-size: var(--font-size-lg); }
+h5 { font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); }
+h6 { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+
+/* Body text */
+p {
+  margin: 0;
+  line-height: var(--line-height-normal);
+}
+
+/* Utility text classes */
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+
+.text-primary { color: var(--color-text-primary); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted { color: var(--color-text-muted); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-danger { color: var(--color-danger); }
+.text-info { color: var(--color-info); }
+
+.font-normal { font-weight: var(--font-weight-normal); }
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+/* Tabular numbers for data display */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  text-align: right;
+}
