@@ -30,6 +30,32 @@ services:
     networks:
       - sales_network
 
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: sales_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    networks:
+      - sales_network
+
   # FastAPI Backend (Development mode with hot reload)
   backend:
     build:
@@ -41,6 +67,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -54,6 +81,8 @@ services:
       start_period: 15s
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     deploy:
       resources:
@@ -133,6 +162,7 @@ services:
 volumes:
   postgres_data:
   pgadmin_data:
+  redis_data:
 
 networks:
   sales_network:

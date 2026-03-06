@@ -10,6 +10,7 @@ from database import get_db
 import models
 import schemas
 import crud
+import cache
 from auth import get_current_user_optional, require_manager, TokenData
 from routers.deps import log_activity
 
@@ -46,6 +47,8 @@ def create_sale(
             user_id = user.id if user else None
 
         result = crud.create_sale(db, sale, user_id=user_id)
+        cache.invalidate_pattern("dashboard:*")
+        cache.invalidate_pattern("analytics:*")
         if current_user:
             log_activity(
                 db, current_user, "create", "sale", result.id, f"فاتورة بيع #{result.id}"
@@ -72,6 +75,8 @@ def update_sale(
         user_id = user.id if user else None
 
         result = crud.update_sale(db, sale_id, sale, user_id=user_id)
+        cache.invalidate_pattern("dashboard:*")
+        cache.invalidate_pattern("analytics:*")
         log_activity(
             db, current_user, "update", "sale", sale_id, f"تعديل فاتورة بيع #{sale_id}"
         )
@@ -89,6 +94,8 @@ def delete_sale(
     """Delete a sale (manager only) — restores inventory."""
     if not crud.delete_sale(db, sale_id):
         raise HTTPException(status_code=404, detail="Sale not found")
+    cache.invalidate_pattern("dashboard:*")
+    cache.invalidate_pattern("analytics:*")
     log_activity(
         db, current_user, "delete", "sale", sale_id, f"حذف فاتورة بيع #{sale_id}"
     )

@@ -10,6 +10,7 @@ from database import get_db
 import models
 import schemas
 import crud
+import cache
 from auth import get_current_user_optional, require_manager, TokenData
 from routers.deps import log_activity
 
@@ -46,6 +47,8 @@ def create_purchase(
             user_id = user.id if user else None
 
         result = crud.create_purchase(db, purchase, user_id=user_id)
+        cache.invalidate_pattern("dashboard:*")
+        cache.invalidate_pattern("analytics:*")
         if current_user:
             log_activity(
                 db, current_user, "create", "purchase", result.id,
@@ -73,6 +76,8 @@ def update_purchase(
         user_id = user.id if user else None
 
         result = crud.update_purchase(db, purchase_id, purchase, user_id=user_id)
+        cache.invalidate_pattern("dashboard:*")
+        cache.invalidate_pattern("analytics:*")
         log_activity(
             db, current_user, "update", "purchase", purchase_id,
             f"تعديل فاتورة شراء #{purchase_id}",
@@ -91,6 +96,8 @@ def delete_purchase(
     """Delete a purchase (manager only) — reduces inventory."""
     if not crud.delete_purchase(db, purchase_id):
         raise HTTPException(status_code=404, detail="Purchase not found")
+    cache.invalidate_pattern("dashboard:*")
+    cache.invalidate_pattern("analytics:*")
     log_activity(
         db, current_user, "delete", "purchase", purchase_id,
         f"حذف فاتورة شراء #{purchase_id}",

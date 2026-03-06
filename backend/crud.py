@@ -1,8 +1,8 @@
 """
 CRUD Operations for all entities
 """
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import func, and_, desc
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
@@ -210,8 +210,11 @@ def generate_product_code(db: Session) -> str:
 
 
 def get_products_with_details(db: Session, skip: int = 0, limit: int = 100, category: str = None) -> list[dict]:
-    """Get products with category and supplier names"""
-    query = db.query(models.Product)
+    """Get products with category and supplier names (eager loaded)."""
+    query = db.query(models.Product).options(
+        joinedload(models.Product.category),
+        joinedload(models.Product.supplier),
+    )
     if category and category != 'all':
         query = query.join(models.Category).filter(models.Category.code == category)
     
@@ -240,11 +243,29 @@ def get_products_with_details(db: Session, skip: int = 0, limit: int = 100, cate
 # SALE CRUD
 # ============================================
 def get_sales(db: Session, skip: int = 0, limit: int = 100) -> list[models.Sale]:
-    return db.query(models.Sale).order_by(models.Sale.id.desc()).offset(skip).limit(limit).all()
+    return (
+        db.query(models.Sale)
+        .options(
+            selectinload(models.Sale.items).joinedload(models.SaleItem.product),
+            joinedload(models.Sale.customer),
+        )
+        .order_by(models.Sale.id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 def get_sale(db: Session, sale_id: int) -> Optional[models.Sale]:
-    return db.query(models.Sale).filter(models.Sale.id == sale_id).first()
+    return (
+        db.query(models.Sale)
+        .options(
+            selectinload(models.Sale.items).joinedload(models.SaleItem.product),
+            joinedload(models.Sale.customer),
+        )
+        .filter(models.Sale.id == sale_id)
+        .first()
+    )
 
 
 def generate_invoice_no(db: Session) -> str:
@@ -539,11 +560,29 @@ def update_sale(db: Session, sale_id: int, sale: schemas.SaleCreate, user_id: in
 # PURCHASE CRUD
 # ============================================
 def get_purchases(db: Session, skip: int = 0, limit: int = 100) -> list[models.Purchase]:
-    return db.query(models.Purchase).order_by(models.Purchase.id.desc()).offset(skip).limit(limit).all()
+    return (
+        db.query(models.Purchase)
+        .options(
+            selectinload(models.Purchase.items).joinedload(models.PurchaseItem.product),
+            joinedload(models.Purchase.supplier),
+        )
+        .order_by(models.Purchase.id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 def get_purchase(db: Session, purchase_id: int) -> Optional[models.Purchase]:
-    return db.query(models.Purchase).filter(models.Purchase.id == purchase_id).first()
+    return (
+        db.query(models.Purchase)
+        .options(
+            selectinload(models.Purchase.items).joinedload(models.PurchaseItem.product),
+            joinedload(models.Purchase.supplier),
+        )
+        .filter(models.Purchase.id == purchase_id)
+        .first()
+    )
 
 
 def generate_purchase_invoice_no(db: Session) -> str:
@@ -849,19 +888,19 @@ def update_purchase(db: Session, purchase_id: int, purchase: schemas.PurchaseCre
 # INVENTORY CRUD
 # ============================================
 def get_inventory_movements(db: Session, product_id: int = None, skip: int = 0, limit: int = 100) -> list[dict]:
-    query = db.query(models.InventoryMovement)
+    query = db.query(models.InventoryMovement).options(
+        joinedload(models.InventoryMovement.product)
+    )
     if product_id:
         query = query.filter(models.InventoryMovement.product_id == product_id)
     movements = query.order_by(models.InventoryMovement.created_at.desc()).offset(skip).limit(limit).all()
     
-    # Add product names to movements
     result = []
     for movement in movements:
-        product = get_product(db, movement.product_id)
         movement_dict = {
             'id': movement.id,
             'product_id': movement.product_id,
-            'product_name': product.name if product else None,
+            'product_name': movement.product.name if movement.product else None,
             'movement_type': movement.movement_type,
             'quantity_before': movement.quantity_before,
             'quantity_change': movement.quantity_change,
@@ -944,16 +983,19 @@ def get_dashboard_stats(db: Session) -> schemas.DashboardStats:
     total_customers = db.query(models.Customer).count()
     
     today = date.today()
-    today_sales = db.query(models.Sale).filter(models.Sale.sale_date == today).all()
+    today_sales = (
+        db.query(models.Sale)
+        .options(selectinload(models.Sale.items).joinedload(models.SaleItem.product))
+        .filter(models.Sale.sale_date == today)
+        .all()
+    )
     
     today_profit = Decimal("0")
     for sale in today_sales:
         for item in sale.items:
-            if item.product_id:
-                product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
-                if product:
-                    profit = (item.unit_price - product.purchase_price) * item.quantity
-                    today_profit += profit
+            if item.product:
+                profit = (item.unit_price - item.product.purchase_price) * item.quantity
+                today_profit += profit
     
     min_stock_setting = db.query(models.Setting).filter(models.Setting.key == 'min_stock_alert').first()
     min_stock = int(min_stock_setting.value) if min_stock_setting and min_stock_setting.value else 5
@@ -971,7 +1013,9 @@ def get_dashboard_stats(db: Session) -> schemas.DashboardStats:
 
 
 def get_low_stock_products(db: Session) -> list[schemas.LowStockProduct]:
-    products = db.query(models.Product).filter(
+    products = db.query(models.Product).options(
+        joinedload(models.Product.category)
+    ).filter(
         models.Product.quantity <= models.Product.min_quantity
     ).all()
     
@@ -996,7 +1040,9 @@ def get_low_stock_products(db: Session) -> list[schemas.LowStockProduct]:
 
 
 def get_profit_report(db: Session, from_date: date = None, to_date: date = None) -> schemas.ProfitReport:
-    query = db.query(models.Sale)
+    query = db.query(models.Sale).options(
+        selectinload(models.Sale.items).joinedload(models.SaleItem.product)
+    )
     if from_date:
         query = query.filter(models.Sale.sale_date >= from_date)
     if to_date:
@@ -1041,9 +1087,13 @@ def get_sales_trend(db: Session, period: str = 'daily', days: int = 30) -> schem
     today = date.today()
     start_date = today - timedelta(days=days)
     
-    sales = db.query(models.Sale).filter(
-        models.Sale.sale_date >= start_date
-    ).order_by(models.Sale.sale_date).all()
+    sales = (
+        db.query(models.Sale)
+        .options(selectinload(models.Sale.items).joinedload(models.SaleItem.product))
+        .filter(models.Sale.sale_date >= start_date)
+        .order_by(models.Sale.sale_date)
+        .all()
+    )
     
     # Group by date
     daily_data = {}
@@ -1057,11 +1107,9 @@ def get_sales_trend(db: Session, period: str = 'daily', days: int = 30) -> schem
         
         # Calculate profit for this sale
         for item in sale.items:
-            if item.product_id:
-                product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
-                if product:
-                    profit = (item.unit_price - product.purchase_price) * item.quantity
-                    daily_data[date_key]['profit'] += profit
+            if item.product:
+                profit = (item.unit_price - item.product.purchase_price) * item.quantity
+                daily_data[date_key]['profit'] += profit
     
     # Fill missing dates
     result = []
@@ -1088,40 +1136,32 @@ def get_sales_trend(db: Session, period: str = 'daily', days: int = 30) -> schem
 
 
 def get_top_products(db: Session, limit: int = 10) -> list[schemas.TopProductItem]:
-    """Get top selling products by revenue"""
-    # Aggregate sale items
-    from sqlalchemy import desc
+    """Get top selling products by revenue using a single aggregation query."""
+    results = (
+        db.query(
+            models.SaleItem.product_id,
+            models.Product.name,
+            models.Product.purchase_price,
+            func.sum(models.SaleItem.quantity).label('quantity_sold'),
+            func.sum(models.SaleItem.total).label('revenue'),
+        )
+        .join(models.Product, models.SaleItem.product_id == models.Product.id)
+        .group_by(models.SaleItem.product_id, models.Product.name, models.Product.purchase_price)
+        .order_by(func.sum(models.SaleItem.total).desc())
+        .limit(limit)
+        .all()
+    )
     
-    product_stats = {}
-    sale_items = db.query(models.SaleItem).all()
-    
-    for item in sale_items:
-        pid = item.product_id
-        if pid not in product_stats:
-            product = db.query(models.Product).filter(models.Product.id == pid).first()
-            product_stats[pid] = {
-                'id': pid,
-                'name': product.name if product else 'Unknown',
-                'quantity_sold': 0,
-                'revenue': Decimal('0'),
-                'profit': Decimal('0'),
-                'purchase_price': product.purchase_price if product else Decimal('0')
-            }
-        
-        product_stats[pid]['quantity_sold'] += item.quantity
-        product_stats[pid]['revenue'] += item.total
-        product_stats[pid]['profit'] += (item.unit_price - product_stats[pid]['purchase_price']) * item.quantity
-    
-    # Sort by revenue and limit
-    sorted_products = sorted(product_stats.values(), key=lambda x: x['revenue'], reverse=True)[:limit]
-    
-    return [schemas.TopProductItem(
-        id=p['id'],
-        name=p['name'],
-        quantity_sold=p['quantity_sold'],
-        revenue=p['revenue'],
-        profit=p['profit']
-    ) for p in sorted_products]
+    return [
+        schemas.TopProductItem(
+            id=r.product_id,
+            name=r.name,
+            quantity_sold=r.quantity_sold,
+            revenue=r.revenue,
+            profit=r.revenue - (r.purchase_price * r.quantity_sold)
+        )
+        for r in results
+    ]
 
 
 def get_inventory_value(db: Session) -> schemas.InventoryValueReport:
@@ -1169,8 +1209,12 @@ def get_business_kpis(db: Session) -> schemas.BusinessKPIs:
     last_month_start = (month_start - timedelta(days=1)).replace(day=1)
     last_month_end = month_start - timedelta(days=1)
     
-    # Get all sales
-    all_sales = db.query(models.Sale).all()
+    # Get all sales with items and products eager-loaded
+    all_sales = (
+        db.query(models.Sale)
+        .options(selectinload(models.Sale.items).joinedload(models.SaleItem.product))
+        .all()
+    )
     today_sales = [s for s in all_sales if s.sale_date == today]
     week_sales = [s for s in all_sales if s.sale_date >= week_ago]
     month_sales = [s for s in all_sales if s.sale_date >= month_start]
@@ -1189,10 +1233,8 @@ def get_business_kpis(db: Session) -> schemas.BusinessKPIs:
     for sale in all_sales:
         total_discount += sale.discount
         for item in sale.items:
-            if item.product_id:
-                product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
-                if product:
-                    total_cost += product.purchase_price * item.quantity
+            if item.product:
+                total_cost += item.product.purchase_price * item.quantity
     
     gross_profit = sum(s.subtotal for s in all_sales) - total_cost if all_sales else Decimal('0')
     net_profit = gross_profit - total_discount
@@ -1237,26 +1279,34 @@ def get_business_kpis(db: Session) -> schemas.BusinessKPIs:
 
 
 def get_top_customers(db: Session, limit: int = 10) -> list[schemas.CustomerAnalyticsItem]:
-    """Get top customers by purchase amount"""
-    customers = db.query(models.Customer).order_by(models.Customer.total_purchases.desc()).limit(limit).all()
+    """Get top customers by purchase amount using a single aggregation query."""
+    from sqlalchemy import case
     
-    result = []
-    for c in customers:
-        # Count orders
-        orders_count = db.query(models.Sale).filter(models.Sale.customer_id == c.id).count()
-        # Get last purchase date
-        last_sale = db.query(models.Sale).filter(
-            models.Sale.customer_id == c.id
-        ).order_by(models.Sale.sale_date.desc()).first()
-        
-        result.append(schemas.CustomerAnalyticsItem(
-            id=c.id,
-            name=c.name,
-            total_purchases=c.total_purchases,
-            orders_count=orders_count,
-            balance=c.balance,
-            last_purchase=last_sale.sale_date if last_sale else None
-        ))
+    results = (
+        db.query(
+            models.Customer.id,
+            models.Customer.name,
+            models.Customer.total_purchases,
+            models.Customer.balance,
+            func.count(models.Sale.id).label('orders_count'),
+            func.max(models.Sale.sale_date).label('last_purchase'),
+        )
+        .outerjoin(models.Sale, models.Customer.id == models.Sale.customer_id)
+        .group_by(models.Customer.id, models.Customer.name, models.Customer.total_purchases, models.Customer.balance)
+        .order_by(models.Customer.total_purchases.desc())
+        .limit(limit)
+        .all()
+    )
     
-    return result
+    return [
+        schemas.CustomerAnalyticsItem(
+            id=r.id,
+            name=r.name,
+            total_purchases=r.total_purchases,
+            orders_count=r.orders_count,
+            balance=r.balance,
+            last_purchase=r.last_purchase
+        )
+        for r in results
+    ]
 

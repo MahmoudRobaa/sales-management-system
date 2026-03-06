@@ -2,12 +2,21 @@
 Sales Management System - FastAPI Backend
 نظام إدارة المبيعات - الواجهة الخلفية
 """
+import time
+import logging
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import os
+
+from logging_config import setup_logging
+
+# Initialise structured logging before anything else
+setup_logging()
+logger = logging.getLogger("sales.api")
 
 from database import engine
 import models
@@ -79,6 +88,37 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     if ENVIRONMENT == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# ============================================
+# REQUEST METRICS MIDDLEWARE
+# ============================================
+request_logger = logging.getLogger("sales.requests")
+
+
+@app.middleware("http")
+async def log_request_metrics(request: Request, call_next):
+    """Log request method, path, status code, and duration."""
+    start = time.perf_counter()
+    response: Response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+
+    request_logger.info(
+        "%s %s → %s (%.1fms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
+    # Expose timing header for clients / monitoring
+    response.headers["X-Response-Time"] = f"{duration_ms:.1f}ms"
     return response
 
 

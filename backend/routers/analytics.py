@@ -6,12 +6,13 @@ from datetime import date, timedelta
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from database import get_db
 import models
 import schemas
 import crud
+import cache
 from auth import require_manager, TokenData
 
 router = APIRouter(tags=["Analytics"])
@@ -22,12 +23,22 @@ router = APIRouter(tags=["Analytics"])
 # ============================================
 @router.get("/api/dashboard/stats", response_model=schemas.DashboardStats)
 def get_dashboard_stats(db: Session = Depends(get_db)):
-    return crud.get_dashboard_stats(db)
+    cached = cache.get(cache.KEY_DASHBOARD_STATS)
+    if cached:
+        return cached
+    result = crud.get_dashboard_stats(db)
+    cache.set(cache.KEY_DASHBOARD_STATS, result.model_dump(), ttl=cache.TTL_DASHBOARD)
+    return result
 
 
 @router.get("/api/dashboard/low-stock", response_model=List[schemas.LowStockProduct])
 def get_low_stock_products(db: Session = Depends(get_db)):
-    return crud.get_low_stock_products(db)
+    cached = cache.get(cache.KEY_LOW_STOCK)
+    if cached:
+        return cached
+    result = crud.get_low_stock_products(db)
+    cache.set(cache.KEY_LOW_STOCK, [r.model_dump() for r in result], ttl=cache.TTL_DASHBOARD)
+    return result
 
 
 @router.get("/api/reports/profit", response_model=schemas.ProfitReport)
@@ -36,7 +47,13 @@ def get_profit_report(
     to_date: Optional[date] = None,
     db: Session = Depends(get_db),
 ):
-    return crud.get_profit_report(db, from_date=from_date, to_date=to_date)
+    key = cache.key_profit_report(str(from_date), str(to_date))
+    cached = cache.get(key)
+    if cached:
+        return cached
+    result = crud.get_profit_report(db, from_date=from_date, to_date=to_date)
+    cache.set(key, result.model_dump(), ttl=cache.TTL_ANALYTICS)
+    return result
 
 
 # ============================================
@@ -45,31 +62,59 @@ def get_profit_report(
 @router.get("/api/analytics/sales-trend", response_model=schemas.SalesTrendReport)
 def get_sales_trend(period: str = "daily", days: int = 30, db: Session = Depends(get_db)):
     """Get sales trend data for charts."""
-    return crud.get_sales_trend(db, period=period, days=days)
+    key = cache.key_sales_trend(period, days)
+    cached = cache.get(key)
+    if cached:
+        return cached
+    result = crud.get_sales_trend(db, period=period, days=days)
+    cache.set(key, result.model_dump(), ttl=cache.TTL_ANALYTICS)
+    return result
 
 
 @router.get("/api/analytics/top-products", response_model=List[schemas.TopProductItem])
 def get_top_products(limit: int = 10, db: Session = Depends(get_db)):
     """Get top selling products by revenue."""
-    return crud.get_top_products(db, limit=limit)
+    key = cache.key_top_products(limit)
+    cached = cache.get(key)
+    if cached:
+        return cached
+    result = crud.get_top_products(db, limit=limit)
+    cache.set(key, [r.model_dump() for r in result], ttl=cache.TTL_ANALYTICS)
+    return result
 
 
 @router.get("/api/analytics/inventory-value", response_model=schemas.InventoryValueReport)
 def get_inventory_value(db: Session = Depends(get_db)):
     """Get inventory value and stock health metrics."""
-    return crud.get_inventory_value(db)
+    cached = cache.get(cache.KEY_INVENTORY_VALUE)
+    if cached:
+        return cached
+    result = crud.get_inventory_value(db)
+    cache.set(cache.KEY_INVENTORY_VALUE, result.model_dump(), ttl=cache.TTL_ANALYTICS)
+    return result
 
 
 @router.get("/api/analytics/kpis", response_model=schemas.BusinessKPIs)
 def get_business_kpis(db: Session = Depends(get_db)):
     """Get comprehensive business KPIs."""
-    return crud.get_business_kpis(db)
+    cached = cache.get(cache.KEY_BUSINESS_KPIS)
+    if cached:
+        return cached
+    result = crud.get_business_kpis(db)
+    cache.set(cache.KEY_BUSINESS_KPIS, result.model_dump(), ttl=cache.TTL_ANALYTICS)
+    return result
 
 
 @router.get("/api/analytics/top-customers", response_model=List[schemas.CustomerAnalyticsItem])
 def get_top_customers(limit: int = 10, db: Session = Depends(get_db)):
     """Get top customers by purchase amount."""
-    return crud.get_top_customers(db, limit=limit)
+    key = cache.key_top_customers(limit)
+    cached = cache.get(key)
+    if cached:
+        return cached
+    result = crud.get_top_customers(db, limit=limit)
+    cache.set(key, [r.model_dump() for r in result], ttl=cache.TTL_ANALYTICS)
+    return result
 
 
 @router.get("/api/analytics/financial-reports")
@@ -97,6 +142,9 @@ def get_financial_reports(
 
     sales = (
         db.query(models.Sale)
+        .options(
+            selectinload(models.Sale.items).joinedload(models.SaleItem.product),
+        )
         .filter(models.Sale.sale_date >= start_date, models.Sale.sale_date <= today)
         .all()
     )
