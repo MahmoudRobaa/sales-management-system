@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
+import re
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -12,9 +13,15 @@ from pydantic import BaseModel
 import os
 
 # Security configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production-min-32-chars!")
+_secret = os.getenv("SECRET_KEY", "")
+if not _secret or len(_secret) < 32:
+    raise RuntimeError(
+        "SECRET_KEY environment variable must be set and at least 32 characters. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
+SECRET_KEY = _secret
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24)))  # 24 hours default
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -69,6 +76,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     password_bytes = plain_password.encode('utf-8')
     hash_bytes = hashed_password.encode('utf-8')
     return bcrypt.checkpw(password_bytes, hash_bytes)
+
+
+def validate_password_strength(password: str) -> tuple[bool, str]:
+    """Validate password meets complexity requirements.
+    Returns (is_valid, error_message)"""
+    if len(password) < 8:
+        return False, "كلمة المرور يجب أن تكون 8 أحرف على الأقل (Password must be at least 8 characters)"
+    if not re.search(r'[A-Z]', password):
+        return False, "كلمة المرور يجب أن تحتوي على حرف كبير (Password must contain an uppercase letter)"
+    if not re.search(r'[a-z]', password):
+        return False, "كلمة المرور يجب أن تحتوي على حرف صغير (Password must contain a lowercase letter)"
+    if not re.search(r'[0-9]', password):
+        return False, "كلمة المرور يجب أن تحتوي على رقم (Password must contain a digit)"
+    return True, ""
 
 
 def get_password_hash(password: str) -> str:

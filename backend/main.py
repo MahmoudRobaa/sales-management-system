@@ -2,17 +2,22 @@
 Sales Management System - FastAPI Backend
 نظام إدارة المبيعات - الواجهة الخلفية
 """
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date, datetime, timedelta
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import csv
 import io
 import json
 import os
+import re
+import html
 
 from database import get_db, engine
 import models
@@ -21,11 +26,15 @@ import crud
 from auth import (
     get_password_hash, verify_password, create_access_token, 
     get_current_user, get_current_user_optional, require_admin, require_manager, require_cashier,
-    Token, UserCreate, UserUpdate, UserResponse, TokenData, ACCESS_TOKEN_EXPIRE_MINUTES
+    Token, UserCreate, UserUpdate, UserResponse, TokenData, ACCESS_TOKEN_EXPIRE_MINUTES,
+    validate_password_strength
 )
 
 # Create database tables (if not exists)
 models.Base.metadata.create_all(bind=engine)
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Sales Management System API",
@@ -33,16 +42,67 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# Attach rate limiter to app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Environment
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
 # CORS middleware for frontend access
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174").split(",")
+if ENVIRONMENT == "production":
+    ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
+    ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS if o.strip()]
+    if not ALLOWED_ORIGINS:
+        raise RuntimeError("ALLOWED_ORIGINS must be set in production")
+else:
+    ALLOWED_ORIGINS = os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174"
+    ).split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+
+
+# ============================================
+# SECURITY HEADERS MIDDLEWARE
+# ============================================
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to every response"""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# ============================================
+# INPUT SANITIZATION HELPERS
+# ============================================
+def sanitize_string(value: Optional[str]) -> Optional[str]:
+    """Sanitize string input to prevent XSS"""
+    if value is None:
+        return None
+    return html.escape(value.strip())
+
+
+def sanitize_dict(data: dict, fields: list[str]) -> dict:
+    """Sanitize specific string fields in a dictionary"""
+    for field in fields:
+        if field in data and isinstance(data[field], str):
+            data[field] = sanitize_string(data[field])
+    return data
 
 
 # ============================================
@@ -76,7 +136,8 @@ def log_activity(db: Session, user: Optional[TokenData], action: str, entity_typ
 # ROOT ENDPOINT
 # ============================================
 @app.get("/")
-def read_root():
+@limiter.limit("100/minute")
+def read_root(request: Request):
     return {"message": "Sales Management System API", "version": "2.0.0"}
 
 
@@ -84,8 +145,9 @@ def read_root():
 # AUTHENTICATION ENDPOINTS
 # ============================================
 @app.post("/api/auth/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Login and get access token"""
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """Login and get access token (rate limited: 5 attempts/minute)"""
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
     
     if not user or not verify_password(form_data.password, user.password_hash):
@@ -170,10 +232,15 @@ def create_user(user: UserCreate, current_user: TokenData = Depends(require_admi
     if existing:
         raise HTTPException(status_code=400, detail="اسم المستخدم موجود بالفعل")
     
+    # Validate password complexity
+    is_valid, error_msg = validate_password_strength(user.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
     db_user = models.User(
-        username=user.username,
+        username=sanitize_string(user.username),
         password_hash=get_password_hash(user.password),
-        full_name=user.full_name,
+        full_name=sanitize_string(user.full_name),
         role=user.role
     )
     db.add(db_user)
@@ -192,12 +259,15 @@ def update_user(user_id: int, user_update: UserUpdate, current_user: TokenData =
         raise HTTPException(status_code=404, detail="المستخدم غير موجود")
     
     if user_update.full_name is not None:
-        db_user.full_name = user_update.full_name
+        db_user.full_name = sanitize_string(user_update.full_name)
     if user_update.role is not None:
         db_user.role = user_update.role
     if user_update.is_active is not None:
         db_user.is_active = user_update.is_active
     if user_update.password is not None:
+        is_valid, error_msg = validate_password_strength(user_update.password)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
         db_user.password_hash = get_password_hash(user_update.password)
     
     db.commit()
