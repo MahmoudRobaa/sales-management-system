@@ -62,6 +62,18 @@ def db():
     transaction = connection.begin()
     session = TestingSessionLocal(bind=connection)
 
+    # Seed initial cash balance so purchase cash-check passes
+    import models
+    cash = models.CashTransaction(
+        transaction_type="DEPOSIT",
+        amount=0,
+        balance_before=0,
+        balance_after=100000,
+        description="رصيد افتتاحي للاختبار",
+    )
+    session.add(cash)
+    session.flush()
+
     yield session
 
     session.close()

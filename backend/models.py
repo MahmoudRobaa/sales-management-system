@@ -10,8 +10,8 @@ from database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(100), unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(200), nullable=False)
     role = Column(String(50), nullable=False, default="cashier")  # admin, manager, cashier
@@ -26,7 +26,7 @@ class User(Base):
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     username = Column(String(100))
     action = Column(String(100), nullable=False)  # create, update, delete, login, logout
@@ -43,7 +43,7 @@ class ActivityLog(Base):
 class Payment(Base):
     __tablename__ = "payments"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     payment_type = Column(String(50), nullable=False)  # sale, purchase
     reference_id = Column(Integer, nullable=False)  # sale_id or purchase_id
     amount = Column(DECIMAL(15, 2), nullable=False)
@@ -57,7 +57,7 @@ class Payment(Base):
 class Category(Base):
     __tablename__ = "categories"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     code = Column(String(50), unique=True, nullable=False)
     name = Column(String(100), nullable=False)
     name_ar = Column(String(100))
@@ -71,7 +71,7 @@ class Category(Base):
 class Supplier(Base):
     __tablename__ = "suppliers"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     code = Column(String(50), unique=True, nullable=False)
     name = Column(String(200), nullable=False)
     phone = Column(String(20))
@@ -90,7 +90,7 @@ class Supplier(Base):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     code = Column(String(50), unique=True, nullable=False)
     name = Column(String(200), nullable=False)
     phone = Column(String(20))
@@ -105,18 +105,38 @@ class Customer(Base):
     sales = relationship("Sale", back_populates="customer")
 
 
+class CashTransaction(Base):
+    __tablename__ = "cash_transactions"
+
+    id = Column(Integer, primary_key=True)
+    transaction_type = Column(String(50), nullable=False)  # DEPOSIT, WITHDRAW, SALE, PURCHASE
+    amount = Column(DECIMAL(15, 2), nullable=False)
+    balance_before = Column(DECIMAL(15, 2), nullable=False, default=0)
+    balance_after = Column(DECIMAL(15, 2), nullable=False, default=0)
+    description = Column(Text)
+    reference_type = Column(String(50))  # sale, purchase, manual
+    reference_id = Column(Integer)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, server_default=func.now())
+
+    creator = relationship("User")
+
+
 class Product(Base):
     __tablename__ = "products"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     code = Column(String(50), unique=True, nullable=False)
     name = Column(String(200), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"))
     supplier_id = Column(Integer, ForeignKey("suppliers.id", ondelete="SET NULL"))
     purchase_price = Column(DECIMAL(15, 2), nullable=False, default=0)
     sale_price = Column(DECIMAL(15, 2), nullable=False, default=0)
-    quantity = Column(Integer, nullable=False, default=0)
+    quantity = Column(Integer, default=0)
     min_quantity = Column(Integer, default=5)
+    unit = Column(String(50), default="قطعة")
+    barcode = Column(String(100))
+    is_active = Column(Boolean, default=True)
     description = Column(Text)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -131,7 +151,7 @@ class Product(Base):
 class Sale(Base):
     __tablename__ = "sales"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     invoice_no = Column(String(50), unique=True, nullable=False)
     customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"))
     customer_name = Column(String(200))
@@ -156,7 +176,7 @@ class Sale(Base):
 class SaleItem(Base):
     __tablename__ = "sale_items"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     sale_id = Column(Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"))
     product_name = Column(String(200))
@@ -172,7 +192,7 @@ class SaleItem(Base):
 class Purchase(Base):
     __tablename__ = "purchases"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     invoice_no = Column(String(50), unique=True, nullable=False)
     supplier_id = Column(Integer, ForeignKey("suppliers.id", ondelete="SET NULL"))
     supplier_name = Column(String(200))
@@ -197,7 +217,7 @@ class Purchase(Base):
 class PurchaseItem(Base):
     __tablename__ = "purchase_items"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     purchase_id = Column(Integer, ForeignKey("purchases.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"))
     product_name = Column(String(200))
@@ -216,7 +236,7 @@ class PurchaseItem(Base):
 class InventoryMovement(Base):
     __tablename__ = "inventory_movements"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     movement_type = Column(String(50), nullable=False)
     quantity_before = Column(Integer, nullable=False)

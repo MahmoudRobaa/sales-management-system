@@ -10,6 +10,7 @@ python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
 slowapi==0.1.9
+alembic==1.18.4
 
 # Testing
 pytest==7.4.4
