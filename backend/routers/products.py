@@ -1,5 +1,5 @@
 """
-Product router — CRUD + CSV import/export.
+Product router — CRUD + CSV import/export + barcode lookup.
 """
 from typing import List, Optional
 import csv
@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
+import models
 import schemas
 import crud
 
@@ -176,3 +177,37 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     if not crud.delete_product(db, product_id):
         raise HTTPException(status_code=404, detail="Product not found")
     return {"message": "Product deleted successfully"}
+
+
+# ============================================
+# 5.28 — BARCODE LOOKUP
+# ============================================
+@router.get("/barcode/{barcode}")
+def lookup_by_barcode(barcode: str, db: Session = Depends(get_db)):
+    """Find product by barcode — checks product code, name, and variant barcode."""
+    # Check product code first
+    product = db.query(models.Product).filter(models.Product.code == barcode).first()
+    if product:
+        return {"type": "product", "product": schemas.ProductResponse.model_validate(product)}
+
+    # Check variant barcode
+    variant = (
+        db.query(models.ProductVariant)
+        .filter(models.ProductVariant.barcode == barcode)
+        .first()
+    )
+    if variant:
+        product = db.query(models.Product).filter(models.Product.id == variant.product_id).first()
+        return {
+            "type": "variant",
+            "product": schemas.ProductResponse.model_validate(product),
+            "variant": {
+                "id": variant.id,
+                "name": variant.name,
+                "sku": variant.sku,
+                "sale_price": float(variant.sale_price),
+                "quantity": variant.quantity,
+            },
+        }
+
+    raise HTTPException(status_code=404, detail="Product not found for barcode")

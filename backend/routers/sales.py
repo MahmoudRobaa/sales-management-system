@@ -1,10 +1,10 @@
 """
-Sales router — CRUD operations.
+Sales router — CRUD operations + held/parked sales.
 """
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 import models
@@ -100,3 +100,74 @@ def delete_sale(
         db, current_user, "delete", "sale", sale_id, f"حذف فاتورة بيع #{sale_id}"
     )
     return {"message": "Sale deleted successfully"}
+
+
+# ============================================
+# 5.8 — HELD / PARKED SALES
+# ============================================
+@router.get("/held", response_model=List[schemas.SaleResponse])
+def list_held_sales(db: Session = Depends(get_db)):
+    """Get all currently held/parked sales."""
+    sales = (
+        db.query(models.Sale)
+        .options(joinedload(models.Sale.items), joinedload(models.Sale.payments))
+        .filter(models.Sale.is_held == True)
+        .order_by(models.Sale.created_at.desc())
+        .all()
+    )
+    return sales
+
+
+@router.put("/{sale_id}/resume", response_model=schemas.SaleResponse)
+def resume_held_sale(
+    sale_id: int,
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user_optional),
+):
+    """Resume a held sale — convert it to a normal completed sale, deducting stock."""
+    sale = db.query(models.Sale).filter(models.Sale.id == sale_id).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    if not sale.is_held:
+        raise HTTPException(status_code=400, detail="Sale is not held")
+
+    # Validate stock
+    for item in sale.items:
+        product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+        if product and item.quantity > product.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient stock for {product.name}: available {product.quantity}, needed {item.quantity}",
+            )
+
+    # Deduct stock + record inventory movement
+    for item in sale.items:
+        product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+        if product:
+            product.quantity -= item.quantity
+            movement = models.InventoryMovement(
+                product_id=product.id,
+                movement_type="sale",
+                quantity_change=-item.quantity,
+                quantity_after=product.quantity,
+                reference_type="sale",
+                reference_id=sale.id,
+            )
+            db.add(movement)
+
+    # Update customer balance if applicable
+    if sale.customer_id:
+        customer = db.query(models.Customer).filter(models.Customer.id == sale.customer_id).first()
+        if customer:
+            customer.balance += sale.total
+
+    sale.is_held = False
+    sale.held_name = None
+    db.commit()
+    db.refresh(sale)
+
+    cache.invalidate_pattern("dashboard:*")
+    cache.invalidate_pattern("analytics:*")
+    if current_user:
+        log_activity(db, current_user, "update", "sale", sale.id, f"استئناف فاتورة محتجزة #{sale.id}")
+    return sale

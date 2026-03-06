@@ -33,6 +33,17 @@ from routers.inventory import router as inventory_router
 from routers.settings import router as settings_router
 from routers.analytics import router as analytics_router
 from routers.cash import router as cash_router
+# Sprint 5 routers
+from routers.returns import router as returns_router
+from routers.shifts import router as shifts_router
+from routers.variants import router as variants_router
+from routers.installments import router as installments_router
+from routers.batches import router as batches_router
+from routers.stocktake import router as stocktake_router
+from routers.einvoice import router as einvoice_router
+from routers.reports import router as reports_router
+from routers.invoicing import router as invoicing_router
+from routers.backup import router as backup_router
 
 # Create database tables (if not exists)
 models.Base.metadata.create_all(bind=engine)
@@ -136,6 +147,17 @@ app.include_router(inventory_router)
 app.include_router(settings_router)
 app.include_router(analytics_router)
 app.include_router(cash_router)
+# Sprint 5 routers
+app.include_router(returns_router)
+app.include_router(shifts_router)
+app.include_router(variants_router)
+app.include_router(installments_router)
+app.include_router(batches_router)
+app.include_router(stocktake_router)
+app.include_router(einvoice_router)
+app.include_router(reports_router)
+app.include_router(invoicing_router)
+app.include_router(backup_router)
 
 
 # ============================================

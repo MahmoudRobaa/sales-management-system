@@ -74,6 +74,12 @@ export const CustomersAPI = {
     update: (id, data) => api.put(`/customers/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/customers/${id}`).then(res => res.data),
     getNextCode: () => api.get('/customers/generate-code').then(res => res.data.code),
+    // Sprint 5 — Loyalty
+    getLoyalty: (id) => api.get(`/customers/${id}/loyalty`).then(res => res.data),
+    earnPoints: (id, amount) => api.post(`/customers/${id}/loyalty/earn?amount=${amount}`).then(res => res.data),
+    redeemPoints: (id, points) => api.post(`/customers/${id}/loyalty/redeem?points=${points}`).then(res => res.data),
+    // Sprint 5 — Purchase History
+    getHistory: (id, skip = 0, limit = 50) => api.get(`/customers/${id}/history?skip=${skip}&limit=${limit}`).then(res => res.data),
 };
 
 // Products API
@@ -96,6 +102,13 @@ export const ProductsAPI = {
             headers: { 'Content-Type': 'multipart/form-data' }
         }).then(res => res.data);
     },
+    // Sprint 5 — Barcode lookup
+    lookupBarcode: (barcode) => api.get(`/products/barcode/${barcode}`).then(res => res.data),
+    // Sprint 5 — Variants
+    getVariants: (productId) => api.get(`/products/${productId}/variants`).then(res => res.data),
+    createVariant: (productId, data) => api.post(`/products/${productId}/variants`, data).then(res => res.data),
+    updateVariant: (productId, variantId, data) => api.put(`/products/${productId}/variants/${variantId}`, data).then(res => res.data),
+    deleteVariant: (productId, variantId) => api.delete(`/products/${productId}/variants/${variantId}`).then(res => res.data),
 };
 
 // Sales API
@@ -105,6 +118,9 @@ export const SalesAPI = {
     create: (data) => api.post('/sales', data).then(res => res.data),
     update: (id, data) => api.put(`/sales/${id}`, data).then(res => res.data),
     delete: (id) => api.delete(`/sales/${id}`).then(res => res.data),
+    // Sprint 5 — Held sales
+    getHeld: () => api.get('/sales/held').then(res => res.data),
+    resume: (id) => api.put(`/sales/${id}/resume`).then(res => res.data),
 };
 
 // Purchases API
@@ -160,6 +176,110 @@ export const CashAPI = {
     getTransactions: (limit = 20) => api.get(`/cash/transactions?limit=${limit}`).then(res => res.data),
     deposit: (amount, description = '') => api.post('/cash/deposit', { amount, description }).then(res => res.data),
     withdraw: (amount, description = '') => api.post('/cash/withdraw', { amount, description }).then(res => res.data),
+};
+
+// =====================================================
+// SPRINT 5 — NEW API MODULES
+// =====================================================
+
+// Returns / Refunds API
+export const ReturnsAPI = {
+    getAll: () => api.get('/returns').then(res => res.data),
+    getById: (id) => api.get(`/returns/${id}`).then(res => res.data),
+    create: (data) => api.post('/returns', data).then(res => res.data),
+    approve: (id) => api.put(`/returns/${id}/approve`).then(res => res.data),
+};
+
+// Shift Management API
+export const ShiftsAPI = {
+    getAll: () => api.get('/shifts').then(res => res.data),
+    getCurrent: () => api.get('/shifts/current').then(res => res.data),
+    open: (data) => api.post('/shifts/open', data).then(res => res.data),
+    close: (data) => api.post('/shifts/close', data).then(res => res.data),
+    getById: (id) => api.get(`/shifts/${id}`).then(res => res.data),
+    getReconciliation: (id) => api.get(`/shifts/${id}/reconciliation`).then(res => res.data),
+    addDrawerLog: (data) => api.post('/shifts/drawer-log', data).then(res => res.data),
+    getDrawerLogs: (shiftId) => api.get(`/shifts/drawer-logs?shift_id=${shiftId}`).then(res => res.data),
+};
+
+// Installments (Credit Sales) API
+export const InstallmentsAPI = {
+    getAll: (saleId = null, customerId = null) => {
+        const params = [];
+        if (saleId) params.push(`sale_id=${saleId}`);
+        if (customerId) params.push(`customer_id=${customerId}`);
+        const qs = params.length ? `?${params.join('&')}` : '';
+        return api.get(`/installments${qs}`).then(res => res.data);
+    },
+    create: (data) => api.post('/installments', data).then(res => res.data),
+    pay: (id) => api.put(`/installments/${id}/pay`).then(res => res.data),
+    getOverdue: () => api.get('/installments/overdue').then(res => res.data),
+};
+
+// Batch / Expiry Tracking API
+export const BatchesAPI = {
+    getAll: (productId = null) => {
+        const qs = productId ? `?product_id=${productId}` : '';
+        return api.get(`/batches${qs}`).then(res => res.data);
+    },
+    create: (data) => api.post('/batches', data).then(res => res.data),
+    getExpiring: (days = 30) => api.get(`/batches/expiring?days=${days}`).then(res => res.data),
+    delete: (id) => api.delete(`/batches/${id}`).then(res => res.data),
+};
+
+// Stocktake API
+export const StocktakeAPI = {
+    getAll: () => api.get('/stocktakes').then(res => res.data),
+    create: () => api.post('/stocktakes').then(res => res.data),
+    getById: (id) => api.get(`/stocktakes/${id}`).then(res => res.data),
+    updateCount: (id, data) => api.put(`/stocktakes/${id}/count`, data).then(res => res.data),
+    complete: (id) => api.post(`/stocktakes/${id}/complete`).then(res => res.data),
+};
+
+// E-Invoice (ETA) API
+export const EInvoiceAPI = {
+    submit: (saleId) => api.post('/einvoice/submit', { sale_id: saleId }).then(res => res.data),
+    getStatus: (saleId) => api.get(`/einvoice/${saleId}`).then(res => res.data),
+    getQR: (saleId) => `/api/einvoice/${saleId}/qr`,
+};
+
+// Invoicing (PDF / Receipt) API
+export const InvoicingAPI = {
+    getPDFUrl: (saleId) => `/api/invoice/${saleId}/pdf`,
+    getReceiptUrl: (saleId) => `/api/invoice/${saleId}/receipt`,
+    getQRUrl: (saleId) => `/api/invoice/${saleId}/qr`,
+};
+
+// Advanced Reports API
+export const ReportsAdvancedAPI = {
+    getHourlyHeatmap: (days = 30) => api.get(`/reports/hourly-heatmap?days=${days}`).then(res => res.data),
+    getDeadStock: (days = 90) => api.get(`/reports/dead-stock?days=${days}`).then(res => res.data),
+    getMargins: (categoryId = null) => {
+        const qs = categoryId ? `?category_id=${categoryId}` : '';
+        return api.get(`/reports/margins${qs}`).then(res => res.data);
+    },
+    getCashierPerformance: (fromDate = null, toDate = null) => {
+        const params = [];
+        if (fromDate) params.push(`from_date=${fromDate}`);
+        if (toDate) params.push(`to_date=${toDate}`);
+        const qs = params.length ? `?${params.join('&')}` : '';
+        return api.get(`/reports/cashier-performance${qs}`).then(res => res.data);
+    },
+    getReorderAlerts: () => api.get('/reports/reorder-alerts').then(res => res.data),
+    generateAutoPO: () => api.post('/reports/auto-po-draft').then(res => res.data),
+};
+
+// Backup API
+export const BackupAPI = {
+    downloadUrl: () => '/api/backup/download',
+    restore: (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post('/backup/restore', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        }).then(res => res.data);
+    },
+    getInfo: () => api.get('/backup/info').then(res => res.data),
 };
 
 export default api;

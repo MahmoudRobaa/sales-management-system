@@ -13,6 +13,11 @@ slowapi==0.1.9
 alembic==1.18.4
 redis==5.0.1
 
+# Sprint 5 — Invoicing & QR
+reportlab==4.1.0
+qrcode[pil]==7.4.2
+python-barcode==0.15.1
+
 # Testing
 pytest==7.4.4
 httpx==0.25.2

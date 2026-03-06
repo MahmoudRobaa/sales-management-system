@@ -86,7 +86,7 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
-    pass
+    credit_limit: Decimal = Decimal("0")
 
 
 class CustomerUpdate(BaseModel):
@@ -95,6 +95,7 @@ class CustomerUpdate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
+    credit_limit: Optional[Decimal] = None
     notes: Optional[str] = None
 
 
@@ -102,6 +103,8 @@ class CustomerResponse(CustomerBase):
     id: int
     total_purchases: Decimal = Decimal("0")
     balance: Decimal = Decimal("0")
+    credit_limit: Decimal = Decimal("0")
+    loyalty_points: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -177,13 +180,17 @@ class SaleItemBase(BaseModel):
     product_name: str
     quantity: int
     unit_price: Decimal
+    tax_amount: Decimal = Decimal("0")
     total: Decimal
+    variant_id: Optional[int] = None
+    variant_label: Optional[str] = None
 
 
 class SaleItemCreate(BaseModel):
     product_id: int
     quantity: int
     unit_price: Optional[Decimal] = None
+    variant_id: Optional[int] = None
 
 
 class SaleItemResponse(SaleItemBase):
@@ -198,14 +205,35 @@ class SaleItemResponse(SaleItemBase):
 # ============================================
 # SALE SCHEMAS
 # ============================================
+class SalePaymentCreate(BaseModel):
+    payment_method: str  # cash, card, wallet
+    amount: Decimal
+    reference_no: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SalePaymentResponse(SalePaymentCreate):
+    id: int
+    sale_id: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class SaleBase(BaseModel):
     customer_id: Optional[int] = None
     customer_name: Optional[str] = "عميل نقدي"
     sale_date: Optional[date] = None
     discount: Decimal = Decimal("0")
+    tax_rate: Optional[Decimal] = None  # if None, use store setting
     paid: Decimal = Decimal("0")
     payment_method: Optional[str] = "كاش"
+    is_held: bool = False
+    held_name: Optional[str] = None
+    shift_id: Optional[int] = None
     notes: Optional[str] = None
+    payments: Optional[List[SalePaymentCreate]] = None
 
 
 class SaleCreate(SaleBase):
@@ -220,13 +248,19 @@ class SaleResponse(BaseModel):
     sale_date: date
     subtotal: Decimal
     discount: Decimal
+    tax_rate: Decimal = Decimal("0")
+    tax_amount: Decimal = Decimal("0")
     total: Decimal
     paid: Decimal
     remaining: Decimal
     status: str
     payment_method: Optional[str] = None
+    is_held: bool = False
+    held_name: Optional[str] = None
+    shift_id: Optional[int] = None
     notes: Optional[str] = None
     items: List[SaleItemResponse] = []
+    payments: List[SalePaymentResponse] = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -487,3 +521,328 @@ class CashTransactionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================
+# PRODUCT VARIANT SCHEMAS (5.12)
+# ============================================
+class VariantCreate(BaseModel):
+    sku: str
+    name: str
+    size: Optional[str] = None
+    color: Optional[str] = None
+    weight: Optional[str] = None
+    purchase_price: Decimal = Decimal("0")
+    sale_price: Decimal = Decimal("0")
+    quantity: int = 0
+    barcode: Optional[str] = None
+
+
+class VariantUpdate(BaseModel):
+    sku: Optional[str] = None
+    name: Optional[str] = None
+    size: Optional[str] = None
+    color: Optional[str] = None
+    weight: Optional[str] = None
+    purchase_price: Optional[Decimal] = None
+    sale_price: Optional[Decimal] = None
+    quantity: Optional[int] = None
+    barcode: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class VariantResponse(VariantCreate):
+    id: int
+    product_id: int
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# SALE RETURN SCHEMAS (5.5)
+# ============================================
+class SaleReturnItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price: Decimal
+    reason: Optional[str] = None
+
+
+class SaleReturnItemResponse(BaseModel):
+    id: int
+    return_id: int
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
+    quantity: int
+    unit_price: Decimal
+    total: Decimal
+    reason: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SaleReturnCreate(BaseModel):
+    sale_id: int
+    reason: Optional[str] = None
+    refund_method: str = "كاش"
+    restock: bool = True
+    notes: Optional[str] = None
+    items: List[SaleReturnItemCreate]
+
+
+class SaleReturnResponse(BaseModel):
+    id: int
+    return_no: str
+    sale_id: Optional[int] = None
+    sale_invoice_no: Optional[str] = None
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    return_date: date
+    subtotal: Decimal
+    tax_amount: Decimal = Decimal("0")
+    total: Decimal
+    refund_method: str
+    refund_amount: Decimal
+    reason: Optional[str] = None
+    status: str
+    restock: bool
+    notes: Optional[str] = None
+    items: List[SaleReturnItemResponse] = []
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# INSTALLMENT SCHEMAS (5.6)
+# ============================================
+class InstallmentCreate(BaseModel):
+    sale_id: int
+    num_installments: int = Field(..., ge=2, le=24)
+    first_payment: Decimal = Decimal("0")
+
+
+class InstallmentResponse(BaseModel):
+    id: int
+    sale_id: int
+    customer_id: Optional[int] = None
+    installment_no: int
+    amount: Decimal
+    due_date: date
+    paid_date: Optional[date] = None
+    paid_amount: Decimal = Decimal("0")
+    status: str
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class InstallmentPayment(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    notes: Optional[str] = None
+
+
+# ============================================
+# SHIFT SCHEMAS (5.9-5.11)
+# ============================================
+class ShiftOpen(BaseModel):
+    opening_balance: Decimal = Decimal("0")
+    notes: Optional[str] = None
+
+
+class ShiftClose(BaseModel):
+    closing_balance: Decimal
+    notes: Optional[str] = None
+
+
+class ShiftResponse(BaseModel):
+    id: int
+    user_id: int
+    username: Optional[str] = None
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    opening_balance: Decimal
+    closing_balance: Optional[Decimal] = None
+    expected_balance: Optional[Decimal] = None
+    variance: Optional[Decimal] = None
+    total_sales: Decimal = Decimal("0")
+    total_returns: Decimal = Decimal("0")
+    total_cash_in: Decimal = Decimal("0")
+    total_cash_out: Decimal = Decimal("0")
+    sales_count: int = 0
+    returns_count: int = 0
+    status: str
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CashDrawerLogCreate(BaseModel):
+    action: str  # open, cash_in, cash_out
+    amount: Decimal = Decimal("0")
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CashDrawerLogResponse(BaseModel):
+    id: int
+    shift_id: Optional[int] = None
+    user_id: Optional[int] = None
+    action: str
+    amount: Decimal
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# BATCH / EXPIRY SCHEMAS (5.14)
+# ============================================
+class BatchCreate(BaseModel):
+    product_id: int
+    batch_no: str
+    quantity: int = 0
+    manufacture_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    purchase_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class BatchResponse(BaseModel):
+    id: int
+    product_id: int
+    batch_no: str
+    quantity: int
+    manufacture_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    purchase_id: Optional[int] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# STOCKTAKE SCHEMAS (5.15)
+# ============================================
+class StocktakeItemCreate(BaseModel):
+    product_id: int
+    counted_quantity: int
+
+
+class StocktakeItemResponse(BaseModel):
+    id: int
+    stocktake_id: int
+    product_id: int
+    product_name: Optional[str] = None
+    system_quantity: int
+    counted_quantity: Optional[int] = None
+    variance: Optional[int] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class StocktakeCreate(BaseModel):
+    notes: Optional[str] = None
+    items: Optional[List[StocktakeItemCreate]] = None  # can add items later
+
+
+class StocktakeResponse(BaseModel):
+    id: int
+    reference: str
+    stocktake_date: date
+    status: str
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    items: List[StocktakeItemResponse] = []
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# E-INVOICE SCHEMAS (5.3)
+# ============================================
+class EInvoiceSubmit(BaseModel):
+    sale_id: int
+
+
+class EInvoiceResponse(BaseModel):
+    id: int
+    sale_id: Optional[int] = None
+    internal_id: str
+    eta_uuid: Optional[str] = None
+    eta_submission_id: Optional[str] = None
+    status: str
+    document_type: str
+    total_amount: Optional[Decimal] = None
+    tax_amount: Optional[Decimal] = None
+    qr_code_data: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================
+# REPORTING SCHEMAS (5.21–5.24)
+# ============================================
+class HourlySalesItem(BaseModel):
+    hour: int
+    sales_count: int
+    total_amount: Decimal
+
+
+class DeadStockItem(BaseModel):
+    id: int
+    code: str
+    name: str
+    quantity: int
+    last_sale_date: Optional[date] = None
+    days_without_sale: int
+
+
+class ProductMarginItem(BaseModel):
+    id: int
+    code: str
+    name: str
+    category: Optional[str] = None
+    purchase_price: Decimal
+    sale_price: Decimal
+    margin: Decimal
+    margin_percent: Decimal
+    total_sold: int
+    total_revenue: Decimal
+    total_profit: Decimal
+
+
+class CashierPerformanceItem(BaseModel):
+    user_id: int
+    username: str
+    full_name: str
+    sales_count: int
+    total_sales: Decimal
+    average_sale: Decimal
+    returns_count: int
+    total_returns: Decimal

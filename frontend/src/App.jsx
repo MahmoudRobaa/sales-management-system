@@ -10,6 +10,11 @@ import Inventory from './components/Inventory'
 import Settings from './components/Settings'
 import Reports from './components/Reports'
 import Login from './components/Login'
+// Sprint 5 components
+import Returns from './components/Returns'
+import ShiftManagement from './components/ShiftManagement'
+import AdvancedReports from './components/AdvancedReports'
+import StocktakeComponent from './components/Stocktake'
 import './index.css'
 
 function App() {
@@ -57,8 +62,12 @@ function App() {
     { id: 'products', icon: 'fas fa-boxes', label: 'كارتة الأصناف' },
     { id: 'sales', icon: 'fas fa-shopping-cart', label: 'المبيعات' },
     { id: 'purchases', icon: 'fas fa-shopping-bag', label: 'المشتريات' },
+    { id: 'returns', icon: 'fas fa-undo', label: 'المرتجعات' },
     { id: 'reports', icon: 'fas fa-chart-bar', label: 'التقارير' },
+    { id: 'advanced-reports', icon: 'fas fa-chart-line', label: 'تقارير متقدمة' },
     { id: 'inventory', icon: 'fas fa-warehouse', label: 'المخازن' },
+    { id: 'stocktake', icon: 'fas fa-clipboard-check', label: 'الجرد' },
+    { id: 'shifts', icon: 'fas fa-clock', label: 'الورديات' },
     { id: 'customers', icon: 'fas fa-users', label: 'العملاء' },
     { id: 'suppliers', icon: 'fas fa-truck', label: 'الموردين' },
     { id: 'settings', icon: 'fas fa-cog', label: 'الإعدادات' },
@@ -80,6 +89,10 @@ function App() {
       case 'inventory': return <Inventory />
       case 'settings': return <Settings />
       case 'reports': return <Reports />
+      case 'returns': return <Returns />
+      case 'shifts': return <ShiftManagement />
+      case 'advanced-reports': return <AdvancedReports />
+      case 'stocktake': return <StocktakeComponent />
       case 'users': return <UserManagement />
       default: return <Dashboard />
     }

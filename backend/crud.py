@@ -284,6 +284,13 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None) -> m
         if customer:
             customer_name = customer.name
     
+    # Determine tax rate from request or store settings
+    if sale.tax_rate is not None:
+        tax_rate = sale.tax_rate
+    else:
+        tax_setting = db.query(models.Setting).filter(models.Setting.key == 'vat_rate').first()
+        tax_rate = Decimal(tax_setting.value) if tax_setting and tax_setting.value else Decimal("0")
+    
     # Calculate totals
     subtotal = Decimal("0")
     sale_items = []
@@ -292,24 +299,48 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None) -> m
         product = get_product(db, item.product_id)
         if not product:
             raise ValueError(f"المنتج غير موجود: {item.product_id}")
-        if product.quantity < item.quantity:
-            raise ValueError(f"الكمية غير كافية في المخزون. المنتج: {product.name}. المتاح: {product.quantity}")
+        
+        # For held sales, skip stock check
+        if not sale.is_held:
+            if product.quantity < item.quantity:
+                raise ValueError(f"الكمية غير كافية في المخزون. المنتج: {product.name}. المتاح: {product.quantity}")
         
         unit_price = item.unit_price if item.unit_price else product.sale_price
         item_total = unit_price * item.quantity
+        item_tax = (item_total * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
         subtotal += item_total
+        
+        variant_label = None
+        if item.variant_id:
+            variant = db.query(models.ProductVariant).filter(
+                models.ProductVariant.id == item.variant_id
+            ).first()
+            if variant:
+                variant_label = variant.name
         
         sale_items.append({
             'product_id': item.product_id,
             'product_name': product.name,
+            'variant_id': item.variant_id,
+            'variant_label': variant_label,
             'quantity': item.quantity,
             'unit_price': unit_price,
+            'tax_amount': item_tax,
             'total': item_total
         })
     
-    total = subtotal - sale.discount
-    remaining = total - sale.paid
-    status = "مدفوعة" if remaining <= 0 else ("جزئي" if sale.paid > 0 else "غير مدفوعة")
+    tax_amount = (subtotal * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+    total = subtotal - sale.discount + tax_amount
+    
+    # For held sales, no payment processing
+    if sale.is_held:
+        remaining = total
+        status = "held"
+        paid = Decimal("0")
+    else:
+        remaining = total - sale.paid
+        paid = sale.paid
+        status = "مدفوعة" if remaining <= 0 else ("جزئي" if sale.paid > 0 else "غير مدفوعة")
     
     # Create sale
     db_sale = models.Sale(
@@ -319,18 +350,23 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None) -> m
         sale_date=sale.sale_date or date.today(),
         subtotal=subtotal,
         discount=sale.discount,
+        tax_rate=tax_rate,
+        tax_amount=tax_amount,
         total=total,
-        paid=sale.paid,
+        paid=paid,
         remaining=max(remaining, Decimal("0")),
         status=status,
-        payment_method=sale.payment_method if sale.paid > 0 else None,
+        payment_method=sale.payment_method if paid > 0 else None,
+        is_held=sale.is_held,
+        held_name=sale.held_name,
+        shift_id=sale.shift_id,
         notes=sale.notes,
         created_by=user_id
     )
     db.add(db_sale)
     db.flush()
     
-    # Create sale items and update inventory
+    # Create sale items and update inventory (skip for held sales)
     for item_data in sale_items:
         db_item = models.SaleItem(
             sale_id=db_sale.id,
@@ -338,33 +374,46 @@ def create_sale(db: Session, sale: schemas.SaleCreate, user_id: int = None) -> m
         )
         db.add(db_item)
         
-        # Update product quantity
-        product = get_product(db, item_data['product_id'])
-        quantity_before = product.quantity
-        product.quantity -= item_data['quantity']
-        
-        # Record inventory movement
-        movement = models.InventoryMovement(
-            product_id=product.id,
-            movement_type='sale',
-            quantity_before=quantity_before,
-            quantity_change=-item_data['quantity'],
-            quantity_after=product.quantity,
-            reason='sale',
-            reference_type='sale',
-            reference_id=db_sale.id
-        )
-        db.add(movement)
+        if not sale.is_held:
+            # Update product quantity
+            product = get_product(db, item_data['product_id'])
+            quantity_before = product.quantity
+            product.quantity -= item_data['quantity']
+            
+            # Record inventory movement
+            movement = models.InventoryMovement(
+                product_id=product.id,
+                movement_type='sale',
+                quantity_before=quantity_before,
+                quantity_change=-item_data['quantity'],
+                quantity_after=product.quantity,
+                reason='sale',
+                reference_type='sale',
+                reference_id=db_sale.id
+            )
+            db.add(movement)
     
-    # Update customer balance if applicable
-    if sale.customer_id:
+    # Create split payment records if provided
+    if sale.payments and not sale.is_held:
+        for pay in sale.payments:
+            db_payment = models.SalePayment(
+                sale_id=db_sale.id,
+                payment_method=pay.payment_method,
+                amount=pay.amount,
+                reference_no=pay.reference_no,
+                notes=pay.notes
+            )
+            db.add(db_payment)
+    
+    # Update customer balance if applicable (skip for held)
+    if sale.customer_id and not sale.is_held:
         customer = get_customer(db, sale.customer_id)
         if customer:
             customer.total_purchases += total
             customer.balance += max(remaining, Decimal("0"))
     
     # Add cash to balance for paid amount
-    if sale.paid > 0:
+    if sale.paid > 0 and not sale.is_held:
         from sqlalchemy import text
         try:
             # Get current cash balance
