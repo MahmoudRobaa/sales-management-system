@@ -302,7 +302,7 @@ CREATE TRIGGER update_purchases_updated_at BEFORE UPDATE ON purchases FOR EACH R
 -- Password: admin123 (bcrypt hashed)
 -- ============================================
 INSERT INTO users (username, password_hash, full_name, role) VALUES
-('admin', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G3MDbpFpHHNdC.', 'مدير النظام', 'admin');
+('admin', '$2b$12$8OdekXDuALQD7lh6wKBtd.fdT3pnEY/mvzuzc7vQdJCTbgeR1MIay', 'مدير النظام', 'admin');
 
 -- ============================================
 -- DEFAULT SETTINGS

@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { ProductsAPI, SuppliersAPI } from '../services/api'
+import { ProductsAPI } from '../services/api'
 
 function Products() {
     const [products, setProducts] = useState([])
-    const [suppliers, setSuppliers] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
     const [editingProduct, setEditingProduct] = useState(null)
@@ -14,7 +13,6 @@ function Products() {
     const [formData, setFormData] = useState({
         code: '',
         name: '',
-        supplier_id: '',
         purchase_price: '',
         sale_price: '',
         quantity: '',
@@ -29,12 +27,8 @@ function Products() {
     const loadData = async () => {
         try {
             setLoading(true)
-            const [productsData, suppliersData] = await Promise.all([
-                ProductsAPI.getAll(),
-                SuppliersAPI.getAll()
-            ])
+            const productsData = await ProductsAPI.getAll()
             setProducts(productsData)
-            setSuppliers(suppliersData)
         } catch (error) {
             console.error('Error loading products:', error)
         } finally {
@@ -49,7 +43,6 @@ function Products() {
         setFormData({
             code: `PROD${String(products.length + 1).padStart(3, '0')}`,
             name: '',
-            supplier_id: '',
             purchase_price: '',
             sale_price: '',
             quantity: 0, // Always starts at 0 - stock added via purchases
@@ -66,7 +59,6 @@ function Products() {
             setFormData({
                 code: product.code,
                 name: product.name,
-                supplier_id: product.supplier_id || '',
                 purchase_price: product.purchase_price,
                 sale_price: product.sale_price,
                 quantity: product.quantity,
@@ -97,7 +89,6 @@ function Products() {
         try {
             const data = {
                 ...formData,
-                supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : null,
                 purchase_price: parseFloat(formData.purchase_price),
                 sale_price: parseFloat(formData.sale_price),
                 quantity: editingProduct ? parseInt(formData.quantity) : 0, // New products always start at 0
@@ -210,7 +201,6 @@ function Products() {
                             <th>سعر الشراء</th>
                             <th>سعر البيع</th>
                             <th>الكمية</th>
-                            <th>المورد</th>
                             <th>الإجراءات</th>
                         </tr>
                     </thead>
@@ -226,7 +216,6 @@ function Products() {
                                         {product.quantity}
                                     </span>
                                 </td>
-                                <td>{product.supplier || '-'}</td>
                                 <td>
                                     <div className="actions">
                                         <button className="action-btn edit" onClick={() => handleEdit(product.id)}>
@@ -274,20 +263,6 @@ function Products() {
                                             required
                                         />
                                     </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>المورد</label>
-                                    <select
-                                        className="form-control"
-                                        value={formData.supplier_id}
-                                        onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}
-                                    >
-                                        <option value="">اختر المورد</option>
-                                        {suppliers.map(sup => (
-                                            <option key={sup.id} value={sup.id}>{sup.name}</option>
-                                        ))}
-                                    </select>
                                 </div>
 
                                 <div className="form-row">

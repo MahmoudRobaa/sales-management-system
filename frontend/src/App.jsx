@@ -8,7 +8,6 @@ import Sales from './components/Sales'
 import Purchases from './components/Purchases'
 import Inventory from './components/Inventory'
 import Settings from './components/Settings'
-import Reports from './components/Reports'
 import Login from './components/Login'
 import './index.css'
 
@@ -57,7 +56,6 @@ function App() {
     { id: 'products', icon: 'fas fa-boxes', label: 'كارتة الأصناف' },
     { id: 'sales', icon: 'fas fa-shopping-cart', label: 'المبيعات' },
     { id: 'purchases', icon: 'fas fa-shopping-bag', label: 'المشتريات' },
-    { id: 'reports', icon: 'fas fa-chart-bar', label: 'التقارير' },
     { id: 'inventory', icon: 'fas fa-warehouse', label: 'المخازن' },
     { id: 'customers', icon: 'fas fa-users', label: 'العملاء' },
     { id: 'suppliers', icon: 'fas fa-truck', label: 'الموردين' },
@@ -79,7 +77,6 @@ function App() {
       case 'purchases': return <Purchases user={user} />
       case 'inventory': return <Inventory />
       case 'settings': return <Settings />
-      case 'reports': return <Reports />
       case 'users': return <UserManagement />
       default: return <Dashboard />
     }
