@@ -30,6 +30,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://salesadmin:salespass123@postgres:5432/sales_management
+    ports:
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,7 +46,7 @@ services:
     container_name: sales_frontend
     restart: unless-stopped
     ports:
-      - "8888:80"
+      - "80:80"
     depends_on:
       - backend
     networks:
