@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { ProductsAPI, InventoryAPI } from '../services/api'
 
+const getErrorMessage = (error, fallback = 'حدث خطأ') => {
+    const detail = error?.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map(d => d.msg || d.message || JSON.stringify(d)).join(', ')
+    return error?.message || fallback
+}
+
 function Inventory() {
     const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
@@ -65,7 +72,7 @@ function Inventory() {
             loadProducts()
         } catch (error) {
             console.error('Error adjusting inventory:', error)
-            alert(error.response?.data?.detail || 'خطأ في تعديل المخزون')
+            alert(getErrorMessage(error, 'خطأ في تعديل المخزون'))
         }
     }
 

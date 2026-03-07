@@ -1,7 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
-export default function Sidebar({ menuItems, activeSection, onNavigate, user, onLogout }) {
+export default function Sidebar({ menuItems, activeSection, onNavigate, user, onLogout, onCollapse }) {
   const [collapsed, setCollapsed] = useState(false)
+
+  useEffect(() => {
+    onCollapse?.(collapsed)
+  }, [collapsed])
 
   return (
     <aside className={`ui-sidebar ${collapsed ? 'ui-sidebar--collapsed' : ''}`}>

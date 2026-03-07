@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { ReportsAdvancedAPI } from '../services/api'
 
+const getErrorMessage = (error, fallback = 'حدث خطأ') => {
+    const detail = error?.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map(d => d.msg || d.message || JSON.stringify(d)).join(', ')
+    return error?.message || fallback
+}
+
 function AdvancedReports() {
     const [activeTab, setActiveTab] = useState('heatmap')
     const [loading, setLoading] = useState(false)
@@ -187,9 +194,13 @@ function AdvancedReports() {
                                 <button className="btn btn-primary" onClick={async () => {
                                     try {
                                         const result = await ReportsAdvancedAPI.generateAutoPO()
-                                        alert(`تم إنشاء ${result.drafts?.length || 0} مسودة طلب شراء (${result.total_items} صنف)`)
+                                        if (result.drafts?.length > 0) {
+                                            alert(`تم إنشاء ${result.drafts.length} مسودة طلب شراء (${result.total_items} صنف)`)
+                                        } else {
+                                            alert('لا توجد أصناف تحتاج إعادة طلب حالياً')
+                                        }
                                     } catch (e) {
-                                        alert('خطأ في إنشاء مسودات الطلب')
+                                        alert(getErrorMessage(e, 'خطأ في إنشاء مسودات الطلب'))
                                     }
                                 }}>
                                     <i className="fas fa-magic"></i> إنشاء مسودات طلب شراء تلقائي

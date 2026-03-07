@@ -95,6 +95,11 @@ table {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  transition: margin-right var(--transition-slow);
+}
+
+.app-main--sidebar-collapsed {
+  margin-right: var(--sidebar-collapsed-width);
 }
 
 .app-content {

@@ -24,6 +24,7 @@ import './index.css'
 function App() {
   const [activeSection, setActiveSection] = useState('dashboard')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [user, setUser] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -133,6 +134,7 @@ function App() {
           onNavigate={setActiveSection}
           user={user}
           onLogout={handleLogout}
+          onCollapse={setSidebarCollapsed}
         />
 
         {/* Mobile nav overlay */}
@@ -145,7 +147,7 @@ function App() {
         />
 
         {/* Main area */}
-        <div className="app-main">
+        <div className={`app-main ${sidebarCollapsed ? 'app-main--sidebar-collapsed' : ''}`}>
           <Navbar
             title={sectionLabels[activeSection] || 'لوحة التحكم'}
             onToggleMobile={() => setMobileNavOpen(true)}

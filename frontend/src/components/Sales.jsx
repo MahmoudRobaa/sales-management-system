@@ -1,5 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { SalesAPI, ProductsAPI, CustomersAPI } from '../services/api'
+
+const getErrorMessage = (error, fallback = 'حدث خطأ') => {
+    const detail = error?.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map(d => d.msg || d.message || JSON.stringify(d)).join(', ')
+    return error?.message || fallback
+}
 
 function Sales({ user }) {
     const [sales, setSales] = useState([])
@@ -27,6 +34,11 @@ function Sales({ user }) {
     const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false)
     const [quickCustomerForm, setQuickCustomerForm] = useState({ name: '', phone: '', address: '' })
     const [savingQuickCustomer, setSavingQuickCustomer] = useState(false)
+
+    // Barcode scanning state
+    const [barcodeInput, setBarcodeInput] = useState('')
+    const [barcodeLoading, setBarcodeLoading] = useState(false)
+    const barcodeRef = useRef(null)
 
     // Check if user can edit (admin or manager)
     const canEdit = user && (user.role === 'admin' || user.role === 'manager')
@@ -92,6 +104,43 @@ function Sales({ user }) {
         setUnitPrice('')
     }
 
+    const handleBarcodeScan = async (e) => {
+        if (e.key !== 'Enter' || !barcodeInput.trim()) return
+        setBarcodeLoading(true)
+        try {
+            const result = await ProductsAPI.lookupBarcode(barcodeInput.trim())
+            const product = result.product
+            if (!product) {
+                alert('لم يتم العثور على المنتج')
+                return
+            }
+            const price = result.type === 'variant' && result.variant
+                ? result.variant.sale_price
+                : parseFloat(product.sale_price)
+            const existingIndex = saleItems.findIndex(item => item.product_id === product.id)
+            if (existingIndex !== -1) {
+                const newItems = [...saleItems]
+                newItems[existingIndex].quantity += 1
+                newItems[existingIndex].total = newItems[existingIndex].quantity * newItems[existingIndex].unit_price
+                setSaleItems(newItems)
+            } else {
+                setSaleItems(prev => [...prev, {
+                    product_id: product.id,
+                    name: product.name + (result.variant ? ` (${result.variant.name})` : ''),
+                    quantity: 1,
+                    unit_price: price,
+                    total: price,
+                    variant_id: result.variant?.id || null
+                }])
+            }
+            setBarcodeInput('')
+        } catch (error) {
+            alert(getErrorMessage(error, 'لم يتم العثور على المنتج بهذا الباركود'))
+        } finally {
+            setBarcodeLoading(false)
+        }
+    }
+
     const removeItem = (index) => {
         setSaleItems(saleItems.filter((_, i) => i !== index))
     }
@@ -152,7 +201,7 @@ function Sales({ user }) {
             loadData()
         } catch (error) {
             console.error('Error saving sale:', error)
-            alert(error.response?.data?.detail || 'خطأ في حفظ العملية')
+            alert(getErrorMessage(error, 'خطأ في حفظ العملية'))
         }
     }
 
@@ -236,7 +285,7 @@ function Sales({ user }) {
             setQuickCustomerForm({ name: '', phone: '', address: '' })
         } catch (error) {
             console.error('Error adding customer:', error)
-            alert(error.response?.data?.detail || 'خطأ في إضافة العميل')
+            alert(getErrorMessage(error, 'خطأ في إضافة العميل'))
         } finally {
             setSavingQuickCustomer(false)
         }
@@ -386,6 +435,31 @@ function Sales({ user }) {
 
                                 <div className="card" style={{ marginBottom: '20px', background: '#f8f9fa', padding: '15px' }}>
                                     <h4 style={{ marginBottom: '15px' }}>إضافة صنف</h4>
+
+                                    {/* Barcode Scanner Input */}
+                                    <div className="form-group" style={{ marginBottom: '15px' }}>
+                                        <label><i className="fas fa-barcode" style={{ marginLeft: '6px' }}></i>مسح الباركود</label>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                            <input
+                                                ref={barcodeRef}
+                                                type="text"
+                                                className="form-control"
+                                                value={barcodeInput}
+                                                onChange={e => setBarcodeInput(e.target.value)}
+                                                onKeyDown={handleBarcodeScan}
+                                                placeholder="امسح الباركود أو اكتب الكود واضغط Enter"
+                                                style={{ flex: 1 }}
+                                                autoFocus
+                                                disabled={barcodeLoading}
+                                            />
+                                            {barcodeLoading && <i className="fas fa-spinner fa-spin" style={{ color: '#6366f1' }}></i>}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ borderTop: '1px solid #dee2e6', paddingTop: '12px', marginBottom: '12px', color: '#6c757d', fontSize: '13px', textAlign: 'center' }}>
+                                        أو اختر المنتج يدوياً
+                                    </div>
+
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label>الصنف</label>
